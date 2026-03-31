@@ -1,0 +1,103 @@
+# This file describes a Fastly Compute package. To learn more visit:
+# https://www.fastly.com/documentation/reference/compute/fastly-toml
+
+authors = ["MonetizationOS"]
+description = "MonetizationOS Proxy Worker for Fastly Compute"
+language = "javascript"
+manifest_version = 3
+name = "monetizationos-fastly-proxy"
+
+
+[local_server]
+
+  [local_server.backends]
+
+    [local_server.backends.monetization_api]
+      override_host = "api.monetizationos.com"
+      url = "https://api.monetizationos.com"
+
+    [local_server.backends.origin]
+      override_host = "news.wingorigin.dev"
+      url = "https://news.wingorigin.dev"
+
+  [local_server.config_stores]
+
+    [local_server.config_stores.config]
+      format = "inline-toml"
+
+      [local_server.config_stores.config.contents]
+        ANONYMOUS_SESSION_COOKIE_NAME = "anon-session-id"
+        AUTHENTICATED_USER_JWT_COOKIE_NAME = "__session"
+        INJECT_SCRIPT_URL = "https://assets.monetizationos.com/web-components-latest.js"
+        MONETIZATION_OS_ENDPOINTS_PREFIX = "/mos-endpoints/"
+        MONETIZATION_OS_HOST = "https://api.monetizationos.com"
+        ORIGIN_URL = "https://news.wingorigin.dev"
+        SURFACE_DECISIONS_IGNORE_PATHS = ""
+        SURFACE_SLUG = "web"
+
+  [local_server.secret_stores]
+
+    [[local_server.secret_stores.secrets]]
+      data = "base64 value added here"
+      key = "MONETIZATION_OS_SECRET_KEY"
+
+[scripts]
+  build = "pnpm run build"
+  post_init = "pnpm install"
+
+[setup]
+
+  [setup.backends]
+
+    [setup.backends.monetization_api]
+      address = "api.monetizationos.com"
+      description = "The MonetizationOS API host."
+
+    [setup.backends.origin]
+      description = "The origin URL for your website."
+
+  [setup.config_stores]
+
+    [setup.config_stores.config]
+      description = "MonetizationOS configuration"
+
+      [setup.config_stores.config.items]
+
+        [setup.config_stores.config.items.ANONYMOUS_SESSION_COOKIE_NAME]
+          description = "The cookie used to identify anonymous sessions."
+          value = "anon-session-id"
+
+        [setup.config_stores.config.items.AUTHENTICATED_USER_JWT_COOKIE_NAME]
+          description = "The cookie used to identify authenticated user JWT sessions."
+          value = "__session"
+
+        [setup.config_stores.config.items.INJECT_SCRIPT_URL]
+          description = "The URL of the script to inject for web components."
+          value = "https://assets.monetizationos.com/web-components-latest.js"
+
+        [setup.config_stores.config.items.MONETIZATION_OS_ENDPOINTS_PREFIX]
+          description = "The MonetizationOS API endpoints prefix."
+          value = "/mos-endpoints/"
+
+        [setup.config_stores.config.items.MONETIZATION_OS_HOST]
+          description = "The MonetizationOS API host."
+          value = "https://api.monetizationos.com"
+
+        [setup.config_stores.config.items.ORIGIN_URL]
+          description = "The origin URL for your website."
+
+        [setup.config_stores.config.items.SURFACE_DECISIONS_IGNORE_PATHS]
+          description = "Comma-separated regex patterns for paths that should skip surface decisions."
+
+        [setup.config_stores.config.items.SURFACE_SLUG]
+          description = "The slug for the surface you want to target."
+
+  [setup.secret_stores]
+
+    [setup.secret_stores.secrets]
+      description = "MonetizationOS secrets"
+
+      [setup.secret_stores.secrets.entries]
+
+        [setup.secret_stores.secrets.entries.MONETIZATION_OS_SECRET_KEY]
+          description = "Your MonetizationOS Secret Key, base64-encoded. To encode: echo -n 'your_secret_key' | base64"

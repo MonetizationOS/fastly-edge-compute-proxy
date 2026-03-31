@@ -1,0 +1,32 @@
+{
+    "type": "module",
+    "private": true,
+    "packageManager": "pnpm@10.33.0",
+    "dependencies": {
+        "@fastly/js-compute": "^3.40.1",
+        "cookie": "^1.1.1"
+    },
+    "devDependencies": {
+        "@fastly/cli": "^14.2.0",
+        "@types/node": "^24.0.0",
+        "html-rewriter-wasm": "^0.4.1",
+        "typescript": "^5.9.3",
+        "vite": "8.0.3",
+        "vitest": "4.1.2"
+    },
+    "pnpm": {
+        "onlyBuiltDependencies": [
+            "esbuild",
+            "rolldown",
+            "@rolldown/binding-darwin-arm64",
+            "@rolldown/binding-darwin-universal"
+        ]
+    },
+    "scripts": {
+        "prebuild": "tsc --noEmit",
+        "build": "js-compute-runtime src/index.ts bin/main.wasm",
+        "start": "fastly compute serve",
+        "deploy": "fastly compute publish",
+        "test": "vitest"
+    }
+}
