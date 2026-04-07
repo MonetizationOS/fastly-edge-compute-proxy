@@ -81,7 +81,38 @@ describe('MonetizationOS Proxy', () => {
         )
         const body = JSON.parse(surfaceDecisionsCall![1].body as string)
         expect(body.resource.id).toBe('/index.html')
-        expect(body.http).toEqual({ url: 'https://test.example/index.html?test=123&test1=456' })
+        expect(body.http).toMatchObject({ url: 'https://test.example/index.html?test=123&test1=456' })
+    })
+
+    it('sends User-Agent header in http.userAgent in surface decisions payload', async () => {
+        const fetchMock = mockFetch()
+
+        const req = new Request('https://test.example/index.html', {
+            headers: { 'User-Agent': 'TestBrowser/1.0' },
+        })
+        await handleRequest({ request: req } as FetchEvent)
+
+        const surfaceDecisionsCall = fetchMock.mock.calls.find(([url]) =>
+            String(url).includes('/api/v1/surface-decisions'),
+        )
+        const body = JSON.parse(surfaceDecisionsCall![1].body as string)
+        expect(body.http).toMatchObject({ userAgent: 'TestBrowser/1.0' })
+    })
+
+    it('sends origin status code in http.proxyOrigin.status in surface decisions payload', async () => {
+        const fetchMock = mockFetch({
+            status: 404,
+            responseBody: '<html><body>Not Found</body></html>',
+        })
+
+        const req = new Request('https://test.example/index.html')
+        await handleRequest({ request: req } as FetchEvent)
+
+        const surfaceDecisionsCall = fetchMock.mock.calls.find(([url]) =>
+            String(url).includes('/api/v1/surface-decisions'),
+        )
+        const body = JSON.parse(surfaceDecisionsCall![1].body as string)
+        expect(body.http).toMatchObject({ proxyOrigin: { status: 404 } })
     })
 
     it('preserves 404 origin HTTP status code for HTML responses', async () => {
