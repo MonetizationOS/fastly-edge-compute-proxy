@@ -9,6 +9,8 @@ type FetchSurfaceDecisionsArgs = {
     url: string
     pageMetadata?: PageMetadata
     fastly?: FastlyMetadata
+    userAgent?: string | undefined
+    originStatus: number
 }
 
 /**
@@ -18,7 +20,7 @@ type FetchSurfaceDecisionsArgs = {
  */
 export default async function fetchSurfaceDecisions(
     env: Env,
-    { surfaceSlug, anonymousIdentifier, userJwt, path, url, pageMetadata, fastly }: FetchSurfaceDecisionsArgs,
+    { surfaceSlug, anonymousIdentifier, userJwt, path, url, pageMetadata, fastly, userAgent, originStatus }: FetchSurfaceDecisionsArgs,
 ): Promise<SurfaceDecisionResponse | null> {
     if (!env.MONETIZATION_OS_SECRET_KEY) {
         console.warn('MONETIZATION_OS_SECRET_KEY is not set, skipping surface decisions')
@@ -42,6 +44,10 @@ export default async function fetchSurfaceDecisions(
                 },
                 http: {
                     url,
+                    userAgent,
+                    proxyOrigin: {
+                        status: originStatus,
+                    },
                 },
                 fastly,
             }),

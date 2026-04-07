@@ -32,6 +32,8 @@ export default async function getSurfaceDecisions(
         url: request.url,
         pageMetadata,
         fastly,
+        userAgent: request.headers.get('User-Agent') ?? undefined,
+        originStatus: response.status,
     })
 
     return [
