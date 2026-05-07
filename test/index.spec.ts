@@ -84,6 +84,24 @@ describe('MonetizationOS Proxy', () => {
         expect(body.http).toEqual({ url: 'https://test.example/index.html?test=123&test1=456' })
     })
 
+    it('prefers request JWT over anonymous cookie in surface decisions identity', async () => {
+        const fetchMock = mockFetch()
+
+        const req = new Request('https://test.example/index.html', {
+            headers: { Cookie: 'anon-session=request-id; jwt-cookie=request-jwt;' },
+        })
+        await handleRequest({ request: req } as FetchEvent)
+
+        const surfaceDecisionsCall = fetchMock.mock.calls.find(([url]) =>
+            String(url).includes('/api/v1/surface-decisions'),
+        )
+        expect(surfaceDecisionsCall).toBeDefined()
+        if (!surfaceDecisionsCall) throw new Error('surface decisions call was not made')
+
+        const body = JSON.parse(surfaceDecisionsCall[1].body as string)
+        expect(body.identity).toStrictEqual({ userJwt: 'request-jwt' })
+    })
+
     it('preserves 404 origin HTTP status code for HTML responses', async () => {
         mockFetch({
             path: '/missing-page.html',
