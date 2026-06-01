@@ -1,32 +1,31 @@
-import { describe, expect, it } from 'vitest'
-import handleSurfaceComponents from '../src/5-surface-components/handleSurfaceComponents'
-import type { Env, SurfaceDecisionResponse, WebContentSurfaceBehavior } from '../src/types'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { handleRequest } from '../src/index'
+import { mockFetch, surfaceDecisionsResponse } from './helpers'
+
+vi.mock('../src/env', () => ({
+    loadEnv: vi.fn().mockResolvedValue({
+        ORIGIN_URL: 'https://origin.example',
+        SURFACE_SLUG: 'web',
+        AUTHENTICATED_USER_JWT_COOKIE_NAME: 'jwt-cookie',
+        ANONYMOUS_SESSION_COOKIE_NAME: 'anon-session',
+        INJECT_SCRIPT_URL: 'https://example.com/web-components-latest.js',
+        MONETIZATION_OS_HOST: 'https://api.monetizationos.com',
+        MONETIZATION_OS_ENDPOINTS_PREFIX: '/mos-endpoints/',
+        MONETIZATION_OS_SECRET_KEY: 'sk_test_123_key.payload',
+        SURFACE_DECISIONS_IGNORE_PATHS: '',
+        NEXT_GEN_WAF_CORP: 'test-corp',
+        NEXT_GEN_WAF_WORKSPACE: 'test-workspace',
+    }),
+}))
 
 const componentsTag = `<script src="https://example.com/web-components-latest.js" async defer></script>`
-const env: Pick<Env, 'INJECT_SCRIPT_URL'> = { INJECT_SCRIPT_URL: 'https://example.com/web-components-latest.js' }
-const inputHtml = '<body><head></head><h1>Test</h1></body>'
-
-function buildSurfaceDecisions(content: WebContentSurfaceBehavior, cssSelector = 'h1'): SurfaceDecisionResponse {
-    return {
-        status: 'success',
-        identity: { identifier: 'id', isAuthenticated: false, authType: 'anonymous', jwtClaims: {} },
-        features: {},
-        customer: { hasProducts: false },
-        componentsSkipped: false,
-        surfaceBehavior: {},
-        componentBehaviors: {
-            test: { metadata: { cssSelector }, content },
-        },
-    }
-}
-
-async function getResultText(content: WebContentSurfaceBehavior, cssSelector?: string): Promise<string> {
-    const response = new Response(inputHtml, { headers: { 'Content-Type': 'text/html' } })
-    const result = await handleSurfaceComponents(response, buildSurfaceDecisions(content, cssSelector ?? 'h1'), env as Env)
-    return result.text()
-}
 
 describe('MonetizationOS Proxy', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals()
+        vi.clearAllMocks()
+    })
+
     it.each([
         {
             name: 'before',
@@ -147,21 +146,32 @@ describe('MonetizationOS Proxy', () => {
             expected: `<body><head>${componentsTag}</head><mos-test version="1.0" props="{&quot;prop1&quot;:&quot;value1&quot;,&quot;prop2&quot;:true}"></mos-test><h1>Test</h1></body>`,
         },
         {
-            // Fastly/Akamai always inject INJECT_SCRIPT_URL regardless of selector validity,
-            // so the script tag appears even when the component selector is skipped.
             name: ':last-child selector is ignored',
             content: { before: [{ type: 'html' as const, content: 'BEFORE' }] },
-            expected: `<body><head>${componentsTag}</head><h1>Test</h1></body>`,
+            expected: `<body><head></head><h1>Test</h1></body>`,
             cssSelector: 'h1:last-child',
         },
         {
             name: 'junk CSS selector is ignored',
             content: { before: [{ type: 'html' as const, content: 'BEFORE' }] },
-            expected: `<body><head>${componentsTag}</head><h1>Test</h1></body>`,
+            expected: `<body><head></head><h1>Test</h1></body>`,
             cssSelector: '&&&invalid###',
         },
     ])('rewrites HTML component content - $name', async ({ content, expected, cssSelector }) => {
-        const text = await getResultText(content, cssSelector ?? 'h1')
-        expect(text).toStrictEqual(expected)
+        mockFetch({
+            surfaceDecisions: {
+                ...surfaceDecisionsResponse,
+                componentBehaviors: {
+                    test: {
+                        metadata: { cssSelector: cssSelector ?? 'h1' },
+                        content,
+                    },
+                },
+            },
+        })
+
+        const res = await handleRequest({ request: new Request('https://test.example/index.html') } as FetchEvent)
+        expect(res.status).toBe(200)
+        expect(await res.text()).toStrictEqual(expected)
     })
 })

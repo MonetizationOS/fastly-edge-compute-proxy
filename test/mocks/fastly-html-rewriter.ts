@@ -1,4 +1,4 @@
-import { ReadableStream, WritableStream } from 'node:stream/web'
+import { TransformStream } from 'node:stream/web'
 import { HTMLRewriter } from 'html-rewriter-wasm'
 
 const encoder = new TextEncoder()
@@ -19,19 +19,9 @@ interface FastlyElement {
     remove(): void
     replaceWith(content: string, options?: FastlyElementOptions): void
     getAttribute(name: string): string | null
+    tagName?: string
 }
 
-/**
- * Wraps a html-rewriter-wasm element to match Fastly's HTMLRewritingStream element API:
- *
- * - Fastly defaults to HTML mode; text content requires { escapeHTML: true }.
- * - html-rewriter-wasm defaults to text mode; HTML requires { html: true }.
- *
- * This wrapper translates Fastly's { escapeHTML: true } convention to wasm's { html: true }
- * convention so that production code runs correctly in tests.
- *
- * Also polyfills `replaceWith(content)` which is not present in html-rewriter-wasm.
- */
 function wrapElement(handler: ElementHandler) {
     return (element: FastlyElement) => {
         const _before = element.before.bind(element)
@@ -39,16 +29,13 @@ function wrapElement(handler: ElementHandler) {
         const _append = element.append.bind(element)
         const _after = element.after.bind(element)
 
-        // Translate Fastly options to html-rewriter-wasm options.
-        // Fastly: no options (or {}) = HTML mode; { escapeHTML: true } = text mode.
-        // wasm:   no options = text mode; { html: true } = HTML mode.
         const translate =
             (origFn: (content: string, options?: FastlyElementOptions) => void) =>
             (content: string, options?: FastlyElementOptions) => {
                 if (options?.escapeHTML) {
-                    origFn(content) // text mode
+                    origFn(content)
                 } else {
-                    origFn(content, { html: true }) // html mode
+                    origFn(content, { html: true })
                 }
             }
 
@@ -67,59 +54,51 @@ function wrapElement(handler: ElementHandler) {
 }
 
 /**
- * Node.js-compatible HTMLRewritingStream backed by html-rewriter-wasm (lol-html).
- * Implements the same TransformStream interface as Fastly's fastly:html-rewriter module
- * so tests run against the real lol-html parsing engine.
+ * Test double for Fastly's HTMLRewritingStream. Extends TransformStream so
+ * production code can use response.body.pipeThrough(stream).
  */
-export class HTMLRewritingStream {
-    #handlers: { selector: string; handler: ElementHandler }[] = []
-    readable: ReadableStream
-    writable: WritableStream
+export class HTMLRewritingStream extends TransformStream<Uint8Array, Uint8Array> {
+    readonly #handlers: { selector: string; handler: ElementHandler }[]
 
     constructor() {
-        const handlers = this.#handlers
+        const handlers: { selector: string; handler: ElementHandler }[] = []
         const inputChunks: Uint8Array[] = []
-        let outputController: ReadableStreamDefaultController<Uint8Array>
 
-        this.readable = new ReadableStream({
-            start(controller) {
-                outputController = controller
-            },
-        })
-
-        this.writable = new WritableStream({
-            write(chunk: unknown) {
+        super({
+            transform(chunk) {
                 inputChunks.push(chunk instanceof Uint8Array ? chunk : encoder.encode(String(chunk)))
             },
-            async close() {
+            flush(controller) {
                 let output = ''
                 const rewriter = new HTMLRewriter((chunk: BufferSource) => {
                     output += decoder.decode(chunk)
                 })
+
                 for (const { selector, handler } of handlers) {
                     try {
                         rewriter.on(selector, { element: wrapElement(handler) as never })
                     } catch {
-                        // Skip selectors that are invalid at processing time (already validated at registration)
+                        // Skip selectors that are invalid at processing time.
                     }
                 }
+
                 try {
                     for (const chunk of inputChunks) {
-                        await rewriter.write(chunk)
+                        rewriter.write(chunk)
                     }
-                    await rewriter.end()
+                    rewriter.end()
                 } finally {
                     rewriter.free()
                 }
-                outputController.enqueue(encoder.encode(output))
-                outputController.close()
+
+                controller.enqueue(encoder.encode(output))
             },
         })
+
+        this.#handlers = handlers
     }
 
     onElement(selector: string, handler: ElementHandler): this {
-        // Validate the selector eagerly, matching Fastly's production behavior where
-        // HTMLRewritingStream throws synchronously for invalid selectors.
         const probe = new HTMLRewriter(() => {})
         try {
             probe.on(selector, { element: () => {} })
