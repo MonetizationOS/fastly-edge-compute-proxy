@@ -1,58 +1,38 @@
 /// <reference types="@fastly/js-compute" />
+import { MOSProxyBuilder } from '@monetizationos/proxy'
 import { loadEnv } from './env'
-import customEndpointRequest from './1-origin-request/customEndpointRequest'
-import performOriginRequest from './1-origin-request/performOriginRequest'
-import rewriteOriginResponse from './2-rewrite-origin-response/rewriteOriginResponse'
-import getSurfaceDecisions from './3-surface-decisions/getSurfaceDecisions'
-import isRedirectResponse from './3-surface-decisions/isRedirectResponse'
-import shouldIgnorePath from './3-surface-decisions/shouldIgnorePath'
-import handleSurfaceBehavior from './4-surface-behavior/handleSurfaceBehavior'
-import handleSurfaceComponents from './5-surface-components/handleSurfaceComponents'
+import { buildFastlyClientMetadata } from './fastlyClientMetadata'
+import { fastlyHtmlRewriter } from './fastlyHtmlRewriter'
+import { originFetcher } from './fastlyOriginFetcher'
 
 addEventListener('fetch', (event) => event.respondWith(handleRequest(event)))
 
 export async function handleRequest(event: FetchEvent): Promise<Response> {
-    const request = event.request
     const env = await loadEnv()
 
-    // Step 1: Origin request
-    const customEndpointResponse = await customEndpointRequest(request, env)
-    if (customEndpointResponse) {
-        return customEndpointResponse
-    }
+    const proxy = new MOSProxyBuilder()
+        .withConfig({
+            originUrl: env.ORIGIN_URL || 'https://example.local',
+            surfaceSlug: env.SURFACE_SLUG ?? '',
+            mosHost: env.MONETIZATION_OS_HOST || 'https://api.monetizationos.com',
+            mosSecretKey: env.MONETIZATION_OS_SECRET_KEY ?? '',
+            mosEndpointsPrefix: env.MONETIZATION_OS_ENDPOINTS_PREFIX || '/mos-endpoints/',
+            anonymousSessionCookieName: env.ANONYMOUS_SESSION_COOKIE_NAME,
+            authenticatedUserJwtCookieName: env.AUTHENTICATED_USER_JWT_COOKIE_NAME,
+            injectScriptUrl: env.INJECT_SCRIPT_URL || undefined,
+            surfaceDecisionsIgnorePaths: env.SURFACE_DECISIONS_IGNORE_PATHS,
+        })
+        .withOriginFetcher(originFetcher)
+        .withApiFetcher((request) => fetch(request, { backend: 'monetization_api' }))
+        .withHtmlRewriter(fastlyHtmlRewriter)
+        .withClientMetadata({
+            build(request) {
+                return {
+                    fastly: buildFastlyClientMetadata(event, request, env),
+                }
+            },
+        })
+        .build()
 
-    const originResponse = await performOriginRequest(request, env)
-    if (!originResponse.headers.get('Content-Type')?.startsWith('text/html')) {
-        return originResponse
-    }
-
-    try {
-        // Step 2: Rewrite Origin Links
-        const rewrittenResponse = await rewriteOriginResponse(request, env, originResponse)
-        if (!rewrittenResponse) {
-            return originResponse
-        }
-
-        // Step 3: MonetizationOS Surface Decisions
-        if (shouldIgnorePath(request, env) || isRedirectResponse(rewrittenResponse)) {
-            return rewrittenResponse
-        }
-
-        const [modifiedResponse, surfaceDecisions] = await getSurfaceDecisions(event, env, rewrittenResponse)
-        if (!surfaceDecisions) {
-            return modifiedResponse
-        }
-
-        // Step 4: Apply Surface Behavior
-        const [surfaceDecisionResponse, returnImmediately] = handleSurfaceBehavior(modifiedResponse, surfaceDecisions)
-        if (returnImmediately) {
-            return surfaceDecisionResponse
-        }
-
-        // Step 5: Apply Surface Component Behaviors
-        return await handleSurfaceComponents(surfaceDecisionResponse, surfaceDecisions, env)
-    } catch (err) {
-        console.error('Error processing response', err)
-        return originResponse
-    }
+    return proxy.handle(event.request)
 }

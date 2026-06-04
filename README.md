@@ -1,14 +1,59 @@
-# MonetizationOS Fastly Proxy
-
+<div align="center">
+  <a href="https://monetizationos.com">
+  <img alt="MonetizationOS logo" src="https://app.monetizationos.com/static/monetizationos-logo.png" height="48">
+  </a>
+  <h1>MonetizationOS Fastly Proxy</h1>
+</div>
 
 [MonetizationOS](https://monetizationos.com) powers monetization for human and bot users alike. Use this Fastly Compute edge worker to proxy your website and integrate MonetizationOS Surfaces, enabling seamless monetization experiences for sites served with static HTML.
 
-Read more at [docs.monetizationos.com](https://docs.monetizationos.com).
+This worker includes handling for both HTTP response modification and CSS-targeted Components for content modifications including: removal/truncation, displaying offerings, and custom messaging.
 
+The shared proxy pipeline is provided by [`@monetizationos/proxy`](https://www.npmjs.com/package/@monetizationos/proxy). This repository contains the Fastly Compute entrypoint, Config Store / Secret Store loading, and Fastly-specific adapters for `HTMLRewritingStream` and client metadata (including optional Next-Gen WAF signals).
 
-This Edge Compute Proxy is based on our [cloudflare worker](https://github.com/MonetizationOS/cloudflare-proxy-worker)
+Read more about using MonetizationOS at [docs.monetizationos.com](https://docs.monetizationos.com).
 
+This package mirrors the architecture of the [Cloudflare proxy worker](https://github.com/MonetizationOS/cloudflare-proxy-worker).
 
+## Required configuration
+
+These values are stored in Fastly Config Store (`config`) and Secret Store (`secrets`) entries. The store names are hardcoded in `src/env.ts`; rename the constants there if you use different store names during setup.
+
+| Key | Description |
+|---|---|
+| `MONETIZATION_OS_SECRET_KEY` | Your MonetizationOS secret key, **base64-encoded** in the Secret Store. [Get your secret key](https://docs.monetizationos.com/docs/guides/environments/managing-environments#api-keys). |
+| `ORIGIN_URL` | The origin URL for your proxied website. |
+| `SURFACE_SLUG` | The slug for the MonetizationOS surface you want to target. |
+| `AUTHENTICATED_USER_JWT_COOKIE_NAME` | Cookie name for authenticated user JWT sessions. |
+| `ANONYMOUS_SESSION_COOKIE_NAME` | Cookie name for anonymous sessions. |
+| `INJECT_SCRIPT_URL` | URL of the MonetizationOS web components script to inject when component transforms run. |
+| `MONETIZATION_OS_HOST` | MonetizationOS API host. Defaults to `https://api.monetizationos.com`. |
+| `MONETIZATION_OS_ENDPOINTS_PREFIX` | Path prefix for proxied custom endpoints. Defaults to `/mos-endpoints/`. |
+
+To base64-encode your secret key:
+
+```bash
+echo -n 'your_secret_key' | base64
+```
+
+## Optional: paths that skip surface decisions
+
+`SURFACE_DECISIONS_IGNORE_PATHS` is a comma-separated list of regular expressions. Matching pathnames still proxy to the origin and rewrite origin links, but skip MonetizationOS surface decisions and component transforms.
+
+## Optional: Next-Gen WAF signals
+
+When both are set in the Config Store, the worker calls Fastly Compute `inspect()` and sends WAF bot-management signals with surface-decisions requests:
+
+- `NEXT_GEN_WAF_CORP` — your Fastly Next-Gen WAF corp/account name
+- `NEXT_GEN_WAF_WORKSPACE` — your Fastly Next-Gen WAF workspace/site name
+
+## Commands
+
+- `pnpm start` — Build and run the local Compute server at `http://127.0.0.1:7676`.
+- `pnpm run deploy` — Build and publish to Fastly.
+- `pnpm test` — Run tests with Vitest.
+- `pnpm run build` — Compile TypeScript to `bin/main.wasm`.
+- `pnpm exec tsc --noEmit` — Type check without emitting files.
 
 ---
 
@@ -39,32 +84,8 @@ On the first run (no `service_id` in `fastly.toml`), this launches an interactiv
 2. Prompts for the two backend hostnames:
    - `origin` → your website's hostname (e.g. `news.example.com`)
    - `monetization_api` → `api.monetizationos.com`
-3. Creates the **`config`** Config Store and prompts for each key:
-
-| Key | Default / Example |
-|---|---|
-| `ORIGIN_URL` | Your website's origin URL (e.g. `https://www.example.com`) |
-| `SURFACE_SLUG` | Your Surface slug from the MonetizationOS dashboard |
-| `AUTHENTICATED_USER_JWT_COOKIE_NAME` | `__session` |
-| `ANONYMOUS_SESSION_COOKIE_NAME` | `anon-session-id` |
-| `INJECT_SCRIPT_URL` | `https://assets.monetizationos.com/web-components-latest.js` |
-| `MONETIZATION_OS_HOST` | `https://api.monetizationos.com` |
-| `MONETIZATION_OS_ENDPOINTS_PREFIX` | `/mos-endpoints/` |
-| `SURFACE_DECISIONS_IGNORE_PATHS` | Comma-separated regex patterns for paths that should skip surface decisions (optional) |
-
-> The store names **`config`** and **`secrets`** are hardcoded in `src/env.ts` (`new ConfigStore('config')` / `new SecretStore('secrets')`). If you use different names during setup, update the `CONFIG_STORE_NAME` and `SECRET_STORE_NAME` constants in `src/env.ts` to match.
-
-4. Creates the **`secrets`** Secret Store and prompts for:
-
-| Key | Value |
-|---|---|
-| `MONETIZATION_OS_SECRET_KEY` | Your Secret Key from the MonetizationOS dashboard, **base64-encoded** |
-
-To encode your secret key before entering it:
-
-```bash
-echo -n 'your_secret_key' | base64
-```
+3. Creates the **`config`** Config Store and prompts for each key listed in [Required configuration](#required-configuration), plus optional keys above
+4. Creates the **`secrets`** Secret Store and prompts for `MONETIZATION_OS_SECRET_KEY` (base64-encoded)
 
 After the wizard completes, note the **Service ID** printed in the output and add it to `fastly.toml`:
 
@@ -111,7 +132,7 @@ pnpm install
 
 All local config is defined in `fastly.toml` under `[local_server.config_stores.config.contents]`. Update those values to match your environment.
 
-For the secret store, update the base64-encoded value in `fastly.toml`:
+For the secret store, set the base64-encoded value in `fastly.toml`:
 
 ```toml
 [[local_server.secret_stores.secrets]]
@@ -119,39 +140,10 @@ For the secret store, update the base64-encoded value in `fastly.toml`:
   data = "<base64-encoded secret key>"
 ```
 
-To encode your key:
-
-```bash
-echo -n 'your_secret_key' | base64
-```
+Both `key` and `data` are required for each secret entry.
 
 ### 3. Run locally
 
 ```bash
-pnpm start          # build + serve at http://127.0.0.1:7676
-```
-
-### 4. Run tests
-
-```bash
-pnpm test           # run tests in watch mode
-pnpm test --run     # run tests once
-```
-
-### 5. Type check
-
-```bash
-pnpm exec tsc --noEmit
-```
-
-### 6. Build
-
-```bash
-pnpm run build      # compile TypeScript → bin/main.wasm
-```
-
-### 7. Deploy
-
-```bash
-pnpm run deploy     # build + publish to Fastly
+pnpm start
 ```

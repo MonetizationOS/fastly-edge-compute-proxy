@@ -1,5 +1,5 @@
+import type { SurfaceDecisionResponse } from '@monetizationos/proxy'
 import { vi } from 'vitest'
-import type { SurfaceDecisionResponse } from '../src/types'
 
 export const testEnv = {
     ORIGIN_URL: 'https://origin.example',
@@ -11,6 +11,8 @@ export const testEnv = {
     MONETIZATION_OS_ENDPOINTS_PREFIX: '/mos-endpoints/',
     MONETIZATION_OS_SECRET_KEY: 'sk_test_123_key.payload',
     SURFACE_DECISIONS_IGNORE_PATHS: '',
+    NEXT_GEN_WAF_CORP: 'test-corp',
+    NEXT_GEN_WAF_WORKSPACE: 'test-workspace',
 }
 
 export const surfaceDecisionsResponse: SurfaceDecisionResponse = {

@@ -1,17 +1,28 @@
 /// <reference types="@fastly/js-compute" />
 import { ConfigStore } from 'fastly:config-store'
 import { SecretStore } from 'fastly:secret-store'
-import type { Env } from './types'
 
-// Names of the Fastly stores to read from.
-// Update these if you named your stores differently in the Fastly dashboard.
 const CONFIG_STORE_NAME = 'config'
 const SECRET_STORE_NAME = 'secrets'
+
+export type Env = {
+    ORIGIN_URL: string
+    SURFACE_SLUG: string
+    AUTHENTICATED_USER_JWT_COOKIE_NAME: string
+    ANONYMOUS_SESSION_COOKIE_NAME: string
+    INJECT_SCRIPT_URL: string
+    MONETIZATION_OS_HOST: string
+    MONETIZATION_OS_ENDPOINTS_PREFIX: string
+    MONETIZATION_OS_SECRET_KEY: string
+    SURFACE_DECISIONS_IGNORE_PATHS?: string
+    NEXT_GEN_WAF_CORP?: string
+    NEXT_GEN_WAF_WORKSPACE?: string
+}
 
 /**
  * Load environment configuration from Fastly Config Store and Secret Store.
  *
- * Environment variables. Requires:
+ * Requires:
  * - A Config Store named per CONFIG_STORE_NAME with the application settings
  * - A Secret Store named per SECRET_STORE_NAME with the secret key
  *
@@ -36,5 +47,7 @@ export async function loadEnv(): Promise<Env> {
         MONETIZATION_OS_ENDPOINTS_PREFIX: config.get('MONETIZATION_OS_ENDPOINTS_PREFIX') || '/mos-endpoints/',
         MONETIZATION_OS_SECRET_KEY: secretKey,
         SURFACE_DECISIONS_IGNORE_PATHS: config.get('SURFACE_DECISIONS_IGNORE_PATHS') || '',
+        NEXT_GEN_WAF_CORP: config.get('NEXT_GEN_WAF_CORP') || '',
+        NEXT_GEN_WAF_WORKSPACE: config.get('NEXT_GEN_WAF_WORKSPACE') || '',
     }
 }

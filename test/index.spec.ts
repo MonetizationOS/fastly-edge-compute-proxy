@@ -2,6 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { handleRequest } from '../src/index'
 import { loadEnv } from '../src/env'
 import { mockFetch, surfaceDecisionsResponse, testEnv } from './helpers'
+import { findSurfaceDecisionsCall, parseSurfaceDecisionsBody } from './surfaceDecisionsBody'
 
 vi.mock('../src/env', () => ({
     loadEnv: vi.fn().mockResolvedValue({
@@ -14,6 +15,8 @@ vi.mock('../src/env', () => ({
         MONETIZATION_OS_ENDPOINTS_PREFIX: '/mos-endpoints/',
         MONETIZATION_OS_SECRET_KEY: 'sk_test_123_key.payload',
         SURFACE_DECISIONS_IGNORE_PATHS: '',
+        NEXT_GEN_WAF_CORP: 'test-corp',
+        NEXT_GEN_WAF_WORKSPACE: 'test-workspace',
     }),
 }))
 
@@ -70,17 +73,80 @@ describe('MonetizationOS Proxy', () => {
         expect(res.status).toBe(200)
     })
 
+    it('sends Fastly client metadata and WAF signals in surface decisions payload', async () => {
+        const fetchMock = mockFetch({ path: '/index.html?test=123&test1=456' })
+
+        const req = new Request('https://test.example/index.html?test=123&test1=456', {
+            headers: {
+                'User-Agent': 'FastlyUnit/1.0',
+                'X-Fastly-Test': 'abc123',
+            },
+        })
+        await handleRequest({
+            request: req,
+            client: {
+                requestId: 'req-123',
+                address: '203.0.113.10',
+                geo: {
+                    country_code: 'US',
+                    city: 'San Francisco',
+                    as_number: 54113,
+                },
+                tlsJA3MD5: 'ja3',
+                tlsJA4: 'ja4',
+                h2Fingerprint: 'h2',
+                ohFingerprint: 'oh',
+                tlsCipherOpensslName: 'TLS_AES_128_GCM_SHA256',
+                tlsProtocol: 'TLSv1.3',
+                tlsClientCertificate: new ArrayBuffer(12),
+                tlsClientHello: new ArrayBuffer(34),
+            },
+        } as unknown as FetchEvent)
+
+        const body = await parseSurfaceDecisionsBody(findSurfaceDecisionsCall(fetchMock)!)
+        expect((body.resource as { id: string }).id).toBe('/index.html')
+        expect(body.http).toEqual({
+            url: 'https://test.example/index.html?test=123&test1=456',
+            userAgent: 'FastlyUnit/1.0',
+            proxyOrigin: { status: 200 },
+        })
+        expect(body.fastly).toMatchObject({
+            client: expect.objectContaining({
+                requestId: 'req-123',
+                address: '203.0.113.10',
+                geo: expect.objectContaining({
+                    country_code: 'US',
+                    city: 'San Francisco',
+                    as_number: 54113,
+                }),
+                tlsJA3MD5: 'ja3',
+                tlsJA4: 'ja4',
+                h2Fingerprint: 'h2',
+                ohFingerprint: 'oh',
+                tlsCipherOpensslName: 'TLS_AES_128_GCM_SHA256',
+                tlsProtocol: 'TLSv1.3',
+                tlsClientCertificate: { byteLength: 12 },
+                tlsClientHello: { byteLength: 34 },
+            }),
+            botManagement: {
+                wafResponse: 200,
+                redirectUrl: null,
+                tags: ['VERIFIEDBOT.AICRAWLER'],
+                verdict: 'allow',
+                decisionMs: 3,
+            },
+        })
+    })
+
     it('sends raw URL in http.url in surface decisions payload', async () => {
         const fetchMock = mockFetch({ path: '/index.html?test=123&test1=456' })
 
         const req = new Request('https://test.example/index.html?test=123&test1=456')
         await handleRequest({ request: req } as FetchEvent)
 
-        const surfaceDecisionsCall = fetchMock.mock.calls.find(([url]) =>
-            String(url).includes('/api/v1/surface-decisions'),
-        )
-        const body = JSON.parse(surfaceDecisionsCall![1].body as string)
-        expect(body.resource.id).toBe('/index.html')
+        const surfaceDecisionsCall = findSurfaceDecisionsCall(fetchMock)
+        const body = await parseSurfaceDecisionsBody(surfaceDecisionsCall!)
+        expect((body.resource as { id: string }).id).toBe('/index.html')
         expect(body.http).toMatchObject({ url: 'https://test.example/index.html?test=123&test1=456' })
     })
 
@@ -92,10 +158,8 @@ describe('MonetizationOS Proxy', () => {
         })
         await handleRequest({ request: req } as FetchEvent)
 
-        const surfaceDecisionsCall = fetchMock.mock.calls.find(([url]) =>
-            String(url).includes('/api/v1/surface-decisions'),
-        )
-        const body = JSON.parse(surfaceDecisionsCall![1].body as string)
+        const surfaceDecisionsCall = findSurfaceDecisionsCall(fetchMock)
+        const body = await parseSurfaceDecisionsBody(surfaceDecisionsCall!)
         expect(body.http).toMatchObject({ userAgent: 'TestBrowser/1.0' })
     })
 
@@ -108,10 +172,8 @@ describe('MonetizationOS Proxy', () => {
         const req = new Request('https://test.example/index.html')
         await handleRequest({ request: req } as FetchEvent)
 
-        const surfaceDecisionsCall = fetchMock.mock.calls.find(([url]) =>
-            String(url).includes('/api/v1/surface-decisions'),
-        )
-        const body = JSON.parse(surfaceDecisionsCall![1].body as string)
+        const surfaceDecisionsCall = findSurfaceDecisionsCall(fetchMock)
+        const body = await parseSurfaceDecisionsBody(surfaceDecisionsCall!)
         expect(body.http).toMatchObject({ proxyOrigin: { status: 404 } })
     })
 
@@ -123,14 +185,12 @@ describe('MonetizationOS Proxy', () => {
         })
         await handleRequest({ request: req } as FetchEvent)
 
-        const surfaceDecisionsCall = fetchMock.mock.calls.find(([url]) =>
-            String(url).includes('/api/v1/surface-decisions'),
-        )
+        const surfaceDecisionsCall = findSurfaceDecisionsCall(fetchMock)
         expect(surfaceDecisionsCall).toBeDefined()
         if (!surfaceDecisionsCall) throw new Error('surface decisions call was not made')
 
-        const body = JSON.parse(surfaceDecisionsCall[1].body as string)
-        expect(body.identity).toStrictEqual({ userJwt: 'request-jwt' })
+        const body = await parseSurfaceDecisionsBody(surfaceDecisionsCall)
+        expect(body.identity).toMatchObject({ userJwt: 'request-jwt' })
     })
 
     it('preserves 404 origin HTTP status code for HTML responses', async () => {

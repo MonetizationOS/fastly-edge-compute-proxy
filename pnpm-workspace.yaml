@@ -1,0 +1,7 @@
+allowBuilds:
+  esbuild: true
+  rolldown: true
+  '@rolldown/binding-darwin-arm64': true
+  '@rolldown/binding-darwin-universal': true
+minimumReleaseAgeExclude:
+  - '@monetizationos/proxy'

@@ -6,7 +6,7 @@ description = "MonetizationOS Proxy Worker for Fastly Compute"
 language = "javascript"
 manifest_version = 3
 name = "monetizationos-fastly-proxy"
-
+service_id = ""
 
 [local_server]
 
@@ -31,6 +31,8 @@ name = "monetizationos-fastly-proxy"
         INJECT_SCRIPT_URL = "https://assets.monetizationos.com/web-components-latest.js"
         MONETIZATION_OS_ENDPOINTS_PREFIX = "/mos-endpoints/"
         MONETIZATION_OS_HOST = "https://api.monetizationos.com"
+        NEXT_GEN_WAF_CORP = "MonetizationOS"
+        NEXT_GEN_WAF_WORKSPACE = ""
         ORIGIN_URL = "https://news.wingorigin.dev"
         SURFACE_DECISIONS_IGNORE_PATHS = ""
         SURFACE_SLUG = "web"
@@ -38,8 +40,8 @@ name = "monetizationos-fastly-proxy"
   [local_server.secret_stores]
 
     [[local_server.secret_stores.secrets]]
-      data = "base64 value added here"
       key = "MONETIZATION_OS_SECRET_KEY"
+      data = "base64_value"
 
 [scripts]
   build = "pnpm run build"
@@ -82,6 +84,12 @@ name = "monetizationos-fastly-proxy"
         [setup.config_stores.config.items.MONETIZATION_OS_HOST]
           description = "The MonetizationOS API host."
           value = "https://api.monetizationos.com"
+
+        [setup.config_stores.config.items.NEXT_GEN_WAF_CORP]
+          description = "The Fastly Next-Gen WAF corp/account name used for Compute inspection."
+
+        [setup.config_stores.config.items.NEXT_GEN_WAF_WORKSPACE]
+          description = "The Fastly Next-Gen WAF workspace/site name used for Compute inspection."
 
         [setup.config_stores.config.items.ORIGIN_URL]
           description = "The origin URL for your website."
