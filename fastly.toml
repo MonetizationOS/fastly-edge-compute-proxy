@@ -35,6 +35,7 @@ service_id = ""
         NEXT_GEN_WAF_WORKSPACE = ""
         ORIGIN_URL = "https://news.wingorigin.dev"
         SURFACE_DECISIONS_IGNORE_PATHS = ""
+        SURFACE_DECISIONS_COOKIES = ""
         SURFACE_SLUG = "web"
 
   [local_server.secret_stores]
@@ -96,6 +97,9 @@ service_id = ""
 
         [setup.config_stores.config.items.SURFACE_DECISIONS_IGNORE_PATHS]
           description = "Comma-separated regex patterns for paths that should skip surface decisions."
+
+        [setup.config_stores.config.items.SURFACE_DECISIONS_COOKIES]
+          description = "Comma-separated regex patterns for cookie names forwarded to surface decisions as http.cookies."
 
         [setup.config_stores.config.items.SURFACE_SLUG]
           description = "The slug for the surface you want to target."

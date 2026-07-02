@@ -21,6 +21,7 @@ export async function handleRequest(event: FetchEvent): Promise<Response> {
             authenticatedUserJwtCookieName: env.AUTHENTICATED_USER_JWT_COOKIE_NAME,
             injectScriptUrl: env.INJECT_SCRIPT_URL || undefined,
             surfaceDecisionsIgnorePaths: env.SURFACE_DECISIONS_IGNORE_PATHS,
+            surfaceDecisionsCookies: env.SURFACE_DECISIONS_COOKIES,
         })
         .withOriginFetcher(originFetcher)
         .withApiFetcher((request) => fetch(request, { backend: 'monetization_api' }))
