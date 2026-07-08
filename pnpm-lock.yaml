@@ -12,8 +12,8 @@ importers:
         specifier: ^3.42.1
         version: 3.42.1(typescript@6.0.3)
       '@monetizationos/proxy':
-        specifier: 1.4.0
-        version: 1.4.0
+        specifier: 1.4.3
+        version: 1.4.3
     devDependencies:
       '@fastly/cli':
         specifier: ^15.1.0
@@ -396,8 +396,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@monetizationos/proxy@1.4.0':
-    resolution: {integrity: sha512-g4vbkcfmAnxM0NQAKRnjY88RELUsUhudUjXvXxOAQvePZ5oHHEb4UKcA8ymGl4IiWT5LuuFUVmQIBXv1dkqB8g==}
+  '@monetizationos/proxy@1.4.3':
+    resolution: {integrity: sha512-nSzTbQVLzXripFF8bzXRhZ2nqZVIQLwZINspE/HARBeBv2fzm0YQhqvEXnqmgoMHAZjxOPhkw8E3ELRKnlP2dg==}
     engines: {node: '>=22'}
 
   '@napi-rs/lzma-android-arm-eabi@1.4.5':
@@ -1813,7 +1813,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@monetizationos/proxy@1.4.0':
+  '@monetizationos/proxy@1.4.3':
     dependencies:
       cookie: 1.1.1
 

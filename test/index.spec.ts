@@ -15,6 +15,7 @@ vi.mock('../src/env', () => ({
         MONETIZATION_OS_ENDPOINTS_PREFIX: '/mos-endpoints/',
         MONETIZATION_OS_SECRET_KEY: 'sk_test_123_key.payload',
         SURFACE_DECISIONS_IGNORE_PATHS: '',
+        SURFACE_DECISIONS_COOKIES: '',
         NEXT_GEN_WAF_CORP: 'test-corp',
         NEXT_GEN_WAF_WORKSPACE: 'test-workspace',
     }),
@@ -409,5 +410,31 @@ describe('MonetizationOS Proxy', () => {
             return url.includes('/api/v1/surface-decisions')
         })
         expect(surfaceDecisionsCalled).toBe(false)
+    })
+
+    it('forwards matching cookies to surface decisions when SURFACE_DECISIONS_COOKIES is set', async () => {
+        vi.mocked(loadEnv).mockResolvedValueOnce({
+            ...testEnv,
+            SURFACE_DECISIONS_COOKIES: '^jwt-cookie$, ^theme$',
+        })
+        const fetchMock = mockFetch({
+            responseHeaders: { 'Set-Cookie': 'theme=from-origin; Path=/' },
+        })
+
+        const req = new Request('https://test.example/index.html', {
+            headers: { Cookie: 'jwt-cookie=request-jwt; theme=old; ignored=1' },
+        })
+        const res = await handleRequest({ request: req } as FetchEvent)
+        expect(res.status).toBe(200)
+
+        const decisionsCall = findSurfaceDecisionsCall(fetchMock)
+        expect(decisionsCall).toBeDefined()
+        const body = await parseSurfaceDecisionsBody(decisionsCall!)
+        expect(body.http).toMatchObject({
+            cookies: {
+                'jwt-cookie': 'request-jwt',
+                theme: 'from-origin',
+            },
+        })
     })
 })

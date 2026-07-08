@@ -4,7 +4,7 @@
     "packageManager": "pnpm@11.5.0",
     "dependencies": {
         "@fastly/js-compute": "^3.42.1",
-        "@monetizationos/proxy": "1.4.0"
+        "@monetizationos/proxy": "1.4.3"
     },
     "devDependencies": {
         "@fastly/cli": "^15.1.0",

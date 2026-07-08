@@ -15,6 +15,7 @@ export type Env = {
     MONETIZATION_OS_ENDPOINTS_PREFIX: string
     MONETIZATION_OS_SECRET_KEY: string
     SURFACE_DECISIONS_IGNORE_PATHS?: string
+    SURFACE_DECISIONS_COOKIES?: string
     NEXT_GEN_WAF_CORP?: string
     NEXT_GEN_WAF_WORKSPACE?: string
 }
@@ -47,6 +48,7 @@ export async function loadEnv(): Promise<Env> {
         MONETIZATION_OS_ENDPOINTS_PREFIX: config.get('MONETIZATION_OS_ENDPOINTS_PREFIX') || '/mos-endpoints/',
         MONETIZATION_OS_SECRET_KEY: secretKey,
         SURFACE_DECISIONS_IGNORE_PATHS: config.get('SURFACE_DECISIONS_IGNORE_PATHS') || '',
+        SURFACE_DECISIONS_COOKIES: config.get('SURFACE_DECISIONS_COOKIES') || '',
         NEXT_GEN_WAF_CORP: config.get('NEXT_GEN_WAF_CORP') || '',
         NEXT_GEN_WAF_WORKSPACE: config.get('NEXT_GEN_WAF_WORKSPACE') || '',
     }
