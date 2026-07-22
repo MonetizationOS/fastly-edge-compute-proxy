@@ -4,6 +4,10 @@ import { loadEnv } from './env'
 import { buildFastlyClientMetadata } from './fastlyClientMetadata'
 import { fastlyHtmlRewriter } from './fastlyHtmlRewriter'
 import { originFetcher } from './fastlyOriginFetcher'
+import { installCloneableResponse } from './lib/installCloneableResponse'
+
+// mos-proxy fail-open uses response.clone(); Fastly Responses often lack it.
+installCloneableResponse()
 
 addEventListener('fetch', (event) => event.respondWith(handleRequest(event)))
 
