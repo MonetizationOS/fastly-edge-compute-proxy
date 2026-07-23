@@ -66,6 +66,62 @@ describe('MonetizationOS Proxy', () => {
         expect(await res.text()).toBe('response')
     })
 
+    it('forwards POST /mos-api/offer-redemptions to the MonetizationOS API', async () => {
+        const fetchMock = mockFetch()
+
+        const req = new Request('https://test.example/mos-api/offer-redemptions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Cookie: `${testEnv.ANONYMOUS_SESSION_COOKIE_NAME}=the-session`,
+                Referer: 'https://test.example/article/tombstone',
+            },
+            body: JSON.stringify({ offerToken: 'offer.abc' }),
+        })
+        const res = await handleRequest({ request: req } as FetchEvent)
+        expect(res.status).toBe(200)
+        expect(await res.json()).toEqual({ success: true })
+
+        const offerRedemptionCall = fetchMock.mock.calls.find(([urlOrReq]) => {
+            const url = urlOrReq instanceof Request ? urlOrReq.url : String(urlOrReq)
+            return url.includes('/api/v1/offer-redemptions')
+        })
+        expect(offerRedemptionCall).toBeDefined()
+
+        const request = offerRedemptionCall![0]
+        expect(request).toBeInstanceOf(Request)
+        const body = (await (request as Request).clone().json()) as Record<string, unknown>
+        expect(body).toMatchObject({
+            offerToken: 'offer.abc',
+            identity: { anonymousIdentifier: 'the-session' },
+            http: {
+                url: 'https://test.example/mos-api/offer-redemptions',
+                referer: 'https://test.example/article/tombstone',
+            },
+        })
+        expect(body.fastly).toBeDefined()
+        expect((request as Request).headers.get('Authorization')).toBe(`Bearer ${testEnv.MONETIZATION_OS_SECRET_KEY}`)
+
+        const originCalled = fetchMock.mock.calls.some(([urlOrReq]) => {
+            const url = urlOrReq instanceof Request ? urlOrReq.url : String(urlOrReq)
+            return url.startsWith('https://origin.example')
+        })
+        expect(originCalled).toBe(false)
+    })
+
+    it('does not intercept non-matching /mos-api paths', async () => {
+        mockFetch({ responseBody: { denied: true } })
+
+        const req = new Request('https://test.example/mos-api/offer-redemption', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ offerToken: 'offer.abc' }),
+        })
+        const res = await handleRequest({ request: req } as FetchEvent)
+        expect(res.status).toBe(200)
+        expect(await res.json()).toEqual({ denied: true })
+    })
+
     it('fetch surface decisions for HTML responses', async () => {
         mockFetch()
 

@@ -77,6 +77,15 @@ export function mockFetch({
             return Promise.resolve(new Response('response', { status: 200 }))
         }
 
+        if (url.includes('/api/v1/offer-redemptions')) {
+            return Promise.resolve(
+                new Response(JSON.stringify({ success: true }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                }),
+            )
+        }
+
         return Promise.resolve(new Response('Not Found', { status: 404 }))
     })
 
