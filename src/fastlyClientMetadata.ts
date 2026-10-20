@@ -18,6 +18,13 @@ export function buildFastlyClientMetadata(
     }
 }
 
+/**
+ * End-user IP for `http.clientIP`. Uses the connection address Fastly reports, not a forwardable header.
+ */
+export function getFastlyClientIP(event: FetchEvent | undefined): string | undefined {
+    return readFastlyValue(() => event?.client?.address) || undefined
+}
+
 function buildFastlyClientMetadataFromClient(client: ClientInfo | undefined): Record<string, unknown> | null {
     if (!client) {
         return null

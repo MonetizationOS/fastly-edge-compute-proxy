@@ -200,6 +200,7 @@ describe('MonetizationOS Proxy', () => {
         expect(body.http).toEqual({
             url: 'https://test.example/index.html?test=123&test1=456',
             userAgent: 'FastlyUnit/1.0',
+            clientIP: '203.0.113.10',
             proxyOrigin: { status: 200 },
         })
         expect(body.fastly).toMatchObject({
@@ -228,6 +229,34 @@ describe('MonetizationOS Proxy', () => {
                 decisionMs: 3,
             },
         })
+    })
+
+    it('omits http.clientIP when Fastly reports no client address', async () => {
+        const fetchMock = mockFetch()
+
+        const req = new Request('https://test.example/index.html')
+        await handleRequest({ request: req } as FetchEvent)
+
+        const body = await parseSurfaceDecisionsBody(findSurfaceDecisionsCall(fetchMock)!)
+        expect(body.http).not.toHaveProperty('clientIP')
+    })
+
+    it('sends the Fastly client address as http.clientIP to authenticated mos-api routes', async () => {
+        const fetchMock = mockFetch()
+
+        const req = new Request('https://test.example/mos-api/offer-redemptions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ offerToken: 'offer.abc' }),
+        })
+        await handleRequest({ request: req, client: { address: '203.0.113.10' } } as unknown as FetchEvent)
+
+        const call = fetchMock.mock.calls.find(([urlOrReq]) => {
+            const url = urlOrReq instanceof Request ? urlOrReq.url : String(urlOrReq)
+            return url.includes('/api/v1/offer-redemptions')
+        })
+        const body = (await (call![0] as Request).clone().json()) as { http: Record<string, unknown> }
+        expect(body.http.clientIP).toBe('203.0.113.10')
     })
 
     it('sends raw URL in http.url in surface decisions payload', async () => {
