@@ -66,6 +66,26 @@ describe('MonetizationOS Proxy', () => {
         expect(await res.text()).toBe('response')
     })
 
+    it('sends the public key and Fastly client metadata to custom endpoints', async () => {
+        const fetchMock = mockFetch()
+
+        const req = new Request('https://test.example/mos-endpoints/custom-endpoint', {
+            headers: { Cookie: `${testEnv.ANONYMOUS_SESSION_COOKIE_NAME}=the-session` },
+        })
+        await handleRequest({ request: req, client: { address: '203.0.113.10' } } as unknown as FetchEvent)
+
+        const call = fetchMock.mock.calls.find(([urlOrReq]) => {
+            const url = urlOrReq instanceof Request ? urlOrReq.url : String(urlOrReq)
+            return url.includes('/endpoints/custom-endpoint')
+        })
+        const headers = (call![0] as Request).headers
+        expect(headers.get('x-mos-key')).toBe(`PublicBearer ${testEnv.MONETIZATION_OS_SECRET_KEY}`)
+        expect(JSON.parse(headers.get('x-mos-endpoint-request-context')!)).toMatchObject({
+            identity: { anonymousIdentifier: 'the-session' },
+            clientMetadata: { fastly: { client: { address: '203.0.113.10' } } },
+        })
+    })
+
     it('forwards POST /mos-api/offer-redemptions to the MonetizationOS API', async () => {
         const fetchMock = mockFetch()
 
@@ -100,7 +120,7 @@ describe('MonetizationOS Proxy', () => {
             },
         })
         expect(body.fastly).toBeDefined()
-        expect((request as Request).headers.get('Authorization')).toBe(`Bearer ${testEnv.MONETIZATION_OS_SECRET_KEY}`)
+        expect((request as Request).headers.get('Authorization')).toBe(`PublicBearer ${testEnv.MONETIZATION_OS_SECRET_KEY}`)
 
         const originCalled = fetchMock.mock.calls.some(([urlOrReq]) => {
             const url = urlOrReq instanceof Request ? urlOrReq.url : String(urlOrReq)
