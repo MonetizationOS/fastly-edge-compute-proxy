@@ -5,7 +5,8 @@
  */
 export function originFetcher(request: Request): Promise<Response> {
     const headers = new Headers(request.headers)
-    headers.set('Accept-Encoding', 'identity')
+    // Only gzip, the one encoding the HTML path decodes. Other responses reach the viewer as the origin sent them.
+    headers.set('Accept-Encoding', acceptsGzip(request.headers.get('Accept-Encoding')) ? 'gzip' : 'identity')
 
     const init: RequestInit = {
         method: request.method,
@@ -19,14 +20,30 @@ export function originFetcher(request: Request): Promise<Response> {
     return fetch(new Request(request.url, init), { backend: 'origin' }).then(normalizeOriginResponse)
 }
 
+/** Whether an Accept-Encoding header allows gzip. */
+export function acceptsGzip(acceptEncoding: string | null): boolean {
+    let wildcard = false
+    for (const part of acceptEncoding?.split(',') ?? []) {
+        const [coding = '', ...params] = part.split(';').map((value) => value.trim().toLowerCase())
+        const q = params.find((param) => param.startsWith('q='))
+        const allowed = !q || Number(q.slice(2)) > 0
+        if (coding === 'gzip' || coding === 'x-gzip') {
+            return allowed
+        }
+        if (coding === '*') {
+            wildcard = allowed
+        }
+    }
+    return wildcard
+}
+
 type Encoding = 'gzip' | 'deflate'
 
 /**
  * Streams HTML to mos-proxy decoded, so it can decide on the head while the origin is still sending.
  * Other responses pass through untouched.
  *
- * Decodes gzip/deflate even though the origin is asked for identity, sniffing gzip magic bytes for
- * origins that compress without saying so.
+ * Decodes gzip/deflate, sniffing gzip magic bytes for origins that compress without saying so.
  */
 export async function normalizeOriginResponse(response: Response): Promise<Response> {
     const contentType = response.headers.get('Content-Type') ?? ''

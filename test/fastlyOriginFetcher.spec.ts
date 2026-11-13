@@ -1,6 +1,6 @@
 import { deflateSync, gzipSync } from 'node:zlib'
 import { describe, expect, it, vi } from 'vitest'
-import { normalizeOriginResponse } from '../src/fastlyOriginFetcher'
+import { acceptsGzip, normalizeOriginResponse, originFetcher } from '../src/fastlyOriginFetcher'
 
 const encoder = new TextEncoder()
 
@@ -126,3 +126,32 @@ async function readAll(reader: ReadableStreamDefaultReader<Uint8Array>): Promise
         chunks.push(value)
     }
 }
+
+describe('originFetcher', () => {
+    it.each([
+        ['gzip, deflate, br', 'gzip'],
+        ['br;q=1.0, gzip;q=0.8', 'gzip'],
+        ['*', 'gzip'],
+        ['gzip;q=0, *', 'identity'],
+        ['br', 'identity'],
+        [null, 'identity'],
+    ])('asks the origin for %s as %s', async (viewer, expected) => {
+        const fetchMock = vi.fn().mockResolvedValue(new Response('ok', { headers: { 'Content-Type': 'text/plain' } }))
+        vi.stubGlobal('fetch', fetchMock)
+        const headers = viewer === null ? undefined : { 'Accept-Encoding': viewer }
+
+        await originFetcher(new Request('https://origin.example/page', { headers }))
+
+        expect((fetchMock.mock.calls[0]![0] as Request).headers.get('Accept-Encoding')).toBe(expected)
+        vi.unstubAllGlobals()
+    })
+})
+
+describe('acceptsGzip', () => {
+    it('reads q values and the wildcard', () => {
+        expect(acceptsGzip('x-gzip')).toBe(true)
+        expect(acceptsGzip('GZIP; q=0.5')).toBe(true)
+        expect(acceptsGzip('*;q=0')).toBe(false)
+        expect(acceptsGzip('')).toBe(false)
+    })
+})
