@@ -54,6 +54,23 @@ describe('MonetizationOS Proxy', () => {
         expect((json as { success: boolean }).success).toBe(true)
     })
 
+    it('sends the viewer host and protocol to the origin backend', async () => {
+        const fetchMock = mockFetch()
+
+        const req = new Request('https://test.example/index.html', { headers: { Forwarded: 'host=spoofed.example' } })
+        await handleRequest({ request: req } as FetchEvent)
+
+        const call = fetchMock.mock.calls.find(([urlOrReq]) => {
+            const url = urlOrReq instanceof Request ? urlOrReq.url : String(urlOrReq)
+            return url.startsWith('https://origin.example')
+        })
+        expect(call![1]).toEqual({ backend: 'origin' })
+        const headers = (call![0] as Request).headers
+        expect(headers.get('X-Forwarded-Host')).toBe('test.example')
+        expect(headers.get('X-Forwarded-Proto')).toBe('https')
+        expect(headers.get('Forwarded')).toBeNull()
+    })
+
     it('proxies mos API requests', async () => {
         mockFetch()
 

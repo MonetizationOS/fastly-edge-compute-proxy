@@ -30,6 +30,8 @@ These values are stored in Fastly Config Store (`config`) and Secret Store (`sec
 | `MONETIZATION_OS_HOST` | MonetizationOS API host. Defaults to `https://api.monetizationos.com`. |
 | `MONETIZATION_OS_ENDPOINTS_PREFIX` | Path prefix for proxied custom endpoints. Defaults to `/mos-endpoints/`. |
 
+Origin requests carry the viewer's host and protocol as `X-Forwarded-Host` and `X-Forwarded-Proto`, so the origin can build URLs on the public domain.
+
 To base64-encode your secret key:
 
 ```bash
