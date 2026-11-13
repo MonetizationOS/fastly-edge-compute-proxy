@@ -19,67 +19,86 @@ export function originFetcher(request: Request): Promise<Response> {
     return fetch(new Request(request.url, init), { backend: 'origin' }).then(normalizeOriginResponse)
 }
 
-/**
- * Backend fetch responses on Fastly Compute are not always full WHATWG Response
- * objects (e.g. they may lack `clone()`). Re-wrap the body into a constructed
- * Response so mos-proxy can tee, clone for fail-open, and rewrite HTML.
- *
- * Uses byte buffers rather than `response.text()` so gzip-compressed or binary
- * bodies are not mis-decoded as UTF-8 (which throws at offset 0 for gzip).
- */
-async function normalizeOriginResponse(response: Response): Promise<Response> {
-    if (!response.body) {
-        return new Response(null, {
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers,
-        })
-    }
+type Encoding = 'gzip' | 'deflate'
 
-    if (typeof (response as any).clone === 'function' && !shouldMaterializeBody(response)) {
+/**
+ * Streams HTML to mos-proxy decoded, so it can decide on the head while the origin is still sending.
+ * Other responses pass through untouched.
+ *
+ * Decodes gzip/deflate even though the origin is asked for identity, sniffing gzip magic bytes for
+ * origins that compress without saying so.
+ */
+export async function normalizeOriginResponse(response: Response): Promise<Response> {
+    const contentType = response.headers.get('Content-Type') ?? ''
+    if (!response.body || !contentType.startsWith('text/html')) {
         return response
     }
 
+    const reader = response.body.getReader()
+    const head = await peek(reader, 2)
     const headers = new Headers(response.headers)
-    let bytes: Uint8Array = new Uint8Array(await response.arrayBuffer())
-    bytes = await maybeDecompress(bytes, headers)
+    const init = { status: response.status, statusText: response.statusText, headers }
+    if (!head) {
+        headers.delete('Content-Length')
+        return new Response(null, init)
+    }
 
-    headers.delete('Content-Length')
+    let body = replay(head, reader)
+    const encoding = detectEncoding(headers.get('Content-Encoding'), head)
+    if (encoding) {
+        body = body.pipeThrough(new DecompressionStream(encoding))
+        headers.delete('Content-Encoding')
+        headers.delete('Content-Length')
+    }
+    return new Response(body, init)
+}
 
-    return new Response(bytes, {
-        status: response.status,
-        statusText: response.statusText,
-        headers,
+function detectEncoding(contentEncoding: string | null, head: Uint8Array): Encoding | null {
+    const encoding = contentEncoding?.trim().toLowerCase()
+    if (encoding === 'gzip' || encoding === 'x-gzip' || (head[0] === 0x1f && head[1] === 0x8b)) {
+        return 'gzip'
+    }
+    return encoding === 'deflate' ? 'deflate' : null
+}
+
+/** Reads until at least `minBytes` are buffered or the body ends; null for an empty body. */
+async function peek(reader: ReadableStreamDefaultReader<Uint8Array>, minBytes: number): Promise<Uint8Array | null> {
+    let head: Uint8Array | null = null
+    while (!head || head.byteLength < minBytes) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (!value?.byteLength) continue
+        head = head ? concat(head, value) : value
+    }
+    return head
+}
+
+/** Re-emits the peeked bytes, then the rest of the reader; cancel reaches the origin. */
+function replay(head: Uint8Array, reader: ReadableStreamDefaultReader<Uint8Array>): ReadableStream<Uint8Array> {
+    let pending: Uint8Array | null = head
+    return new ReadableStream<Uint8Array>({
+        async pull(controller) {
+            if (pending) {
+                controller.enqueue(pending)
+                pending = null
+                return
+            }
+            const { done, value } = await reader.read()
+            if (done) {
+                controller.close()
+            } else {
+                controller.enqueue(value)
+            }
+        },
+        cancel(reason) {
+            return reader.cancel(reason)
+        },
     })
 }
 
-function shouldMaterializeBody(response: Response): boolean {
-    const contentType = response.headers.get('Content-Type') ?? ''
-    return (
-        contentType.startsWith('text/html') ||
-        response.headers.has('Content-Encoding') ||
-        typeof (response as any).clone !== 'function'
-    )
-}
-
-async function maybeDecompress(bytes: Uint8Array, headers: Headers): Promise<Uint8Array> {
-    const encoding = headers.get('Content-Encoding')?.toLowerCase()
-    const isGzip = encoding === 'gzip' || (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b)
-
-    if (isGzip) {
-        headers.delete('Content-Encoding')
-        return decompressBytes(bytes, 'gzip')
-    }
-
-    if (encoding === 'deflate') {
-        headers.delete('Content-Encoding')
-        return decompressBytes(bytes, 'deflate')
-    }
-
-    return new Uint8Array(bytes)
-}
-
-async function decompressBytes(data: Uint8Array, format: 'gzip' | 'deflate'): Promise<Uint8Array> {
-    const decompressed = new Response(data).body!.pipeThrough(new DecompressionStream(format))
-    return new Uint8Array(await new Response(decompressed).arrayBuffer())
+function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
+    const out = new Uint8Array(a.byteLength + b.byteLength)
+    out.set(a)
+    out.set(b, a.byteLength)
+    return out
 }
