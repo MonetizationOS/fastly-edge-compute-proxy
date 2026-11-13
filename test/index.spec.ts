@@ -174,6 +174,50 @@ describe('MonetizationOS Proxy', () => {
         consoleError.mockRestore()
     })
 
+    it('asks the MonetizationOS API for gzip and has Fastly decode it', async () => {
+        const fetchMock = mockFetch()
+
+        await handleRequest({ request: new Request('https://test.example/index.html') } as FetchEvent)
+        await handleRequest({
+            request: new Request('https://test.example/mos-api/offer-redemptions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept-Encoding': 'br' },
+                body: JSON.stringify({ offerToken: 'offer.abc' }),
+            }),
+        } as FetchEvent)
+        await handleRequest({ request: new Request('https://test.example/mos-endpoints/custom-endpoint') } as FetchEvent)
+
+        const apiCalls = fetchMock.mock.calls.filter(([request]) => (request as Request).url.startsWith(testEnv.MONETIZATION_OS_HOST))
+        expect(apiCalls.map(([request]) => new URL((request as Request).url).pathname)).toEqual([
+            '/api/v1/surface-decisions',
+            '/api/v1/offer-redemptions',
+            '/api/v1/envs/test_123/endpoints/custom-endpoint',
+        ])
+        for (const [request, options] of apiCalls) {
+            expect((request as Request).headers.get('Accept-Encoding')).toBe('gzip')
+            expect(options).toEqual({ backend: 'monetization_api', fastly: { decompressGzip: true } })
+        }
+    })
+
+    it('relays API responses with the compress hint, whatever the viewer accepts', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response('{"ok":true}', { headers: { 'Content-Type': 'application/json' } }),
+        )
+        vi.stubGlobal('fetch', fetchMock)
+
+        const res = await handleRequest({
+            request: new Request('https://test.example/mos-endpoints/custom-endpoint', {
+                headers: { 'Accept-Encoding': 'gzip, br' },
+            }),
+        } as FetchEvent)
+
+        const [request, options] = fetchMock.mock.calls[0]!
+        expect((request as Request).headers.get('Accept-Encoding')).toBe('gzip')
+        expect(options).toEqual({ backend: 'monetization_api', fastly: { decompressGzip: true } })
+        expect(res.headers.get('x-compress-hint')).toBe('on')
+        expect(await res.json()).toEqual({ ok: true })
+    })
+
     it('fetch surface decisions for HTML responses', async () => {
         mockFetch()
 
