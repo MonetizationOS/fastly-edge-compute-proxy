@@ -7,7 +7,7 @@
         "@monetizationos/proxy": "1.5.1"
     },
     "devDependencies": {
-        "@fastly/cli": "^15.1.0",
+        "@fastly/cli": "^17.2.0",
         "@types/node": "^25.9.1",
         "html-rewriter-wasm": "^0.4.1",
         "typescript": "^6.0.2",
