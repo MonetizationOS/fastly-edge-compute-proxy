@@ -9,7 +9,15 @@ import { installCloneableResponse } from './lib/installCloneableResponse'
 // mos-proxy fail-open uses response.clone(); Fastly Responses often lack it.
 installCloneableResponse()
 
-addEventListener('fetch', (event) => event.respondWith(handleRequest(event)))
+addEventListener('fetch', (event) => event.respondWith(handleFetch(event)))
+
+/** js-compute logs only "Error while running request handler." for an uncaught error, so log it before rethrowing. */
+export function handleFetch(event: FetchEvent): Promise<Response> {
+    return handleRequest(event).catch((error: unknown) => {
+        console.error('Unhandled error in request handler:', error instanceof Error ? (error.stack ?? error.message) : error)
+        throw error
+    })
+}
 
 export async function handleRequest(event: FetchEvent): Promise<Response> {
     const env = await loadEnv()
