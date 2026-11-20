@@ -3,7 +3,7 @@
     "private": true,
     "packageManager": "pnpm@11.5.0",
     "dependencies": {
-        "@fastly/js-compute": "^3.42.1",
+        "@fastly/js-compute": "^4.3.0",
         "@monetizationos/proxy": "1.5.1"
     },
     "devDependencies": {
