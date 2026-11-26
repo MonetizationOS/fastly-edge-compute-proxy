@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, type MockInstance, vi } from 'vitest'
 import { handleRequest } from '../src/index'
 import { surfaceDecisionsResponse, testEnv, withoutNativeResponseClone } from './helpers'
 import { findSurfaceDecisionsCall } from './surfaceDecisionsBody'
@@ -51,6 +51,27 @@ describe('streamed HTML pipeline', () => {
         expect(text).toContain('<i>BEFORE</i><h1>Late</h1>')
         expect(text).toContain('href="https://test.example/next"')
         expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Could not clone response'), expect.anything())
+    })
+
+    it('gives a bodyless HTML origin response a clone for fail-open', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        vi.stubGlobal(
+            'fetch',
+            vi.fn().mockImplementation((request: Request) => {
+                if (request.url.startsWith(testEnv.ORIGIN_URL)) {
+                    const notModified = new Response(null, { status: 304, headers: { 'Content-Type': 'text/html' } })
+                    // Like a Fastly backend response
+                    delete (notModified as { clone?: unknown }).clone
+                    return Promise.resolve(notModified)
+                }
+                return Promise.resolve(Response.json(surfaceDecisionsResponse))
+            }),
+        )
+
+        const res = await handleRequest({ request: new Request('https://test.example/article') } as FetchEvent)
+
+        expect(res.status).toBe(304)
+        expect(cloneFailures(warn)).toEqual([])
     })
 
     it('fails open to the whole page when the pipeline throws after reading the head', async () => {
@@ -106,4 +127,9 @@ function stubOrigin() {
             controller.close()
         },
     }
+}
+
+/** The core's fail-open clone warnings; it logs `console.warn(message, { code, stage }, error)`. */
+function cloneFailures(warn: MockInstance<typeof console.warn>) {
+    return warn.mock.calls.filter(([, context]) => context?.code === 'response-clone-failed')
 }

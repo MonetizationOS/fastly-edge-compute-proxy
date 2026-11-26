@@ -48,32 +48,35 @@ type Encoding = 'gzip' | 'deflate'
 export async function normalizeOriginResponse(response: Response): Promise<Response> {
     // Lowercased like the core's isHtmlContentType, which decides what it treats as HTML
     const contentType = response.headers.get('Content-Type')?.toLowerCase() ?? ''
-    if (!response.body || !contentType.startsWith('text/html')) {
+    if (!contentType.startsWith('text/html')) {
         return response
     }
 
-    const reader = response.body.getReader()
-    const head = await peek(reader, 2)
     const headers = new Headers(response.headers)
     const init = { status: response.status, statusText: response.statusText, headers }
+    const reader = response.body?.getReader()
+    const head = reader ? await peek(reader, 2) : null
+    const encoding = detectEncoding(headers.get('Content-Encoding'), head)
+    if (encoding) {
+        headers.delete('Content-Encoding')
+        headers.delete('Content-Length')
+    }
+    // HEAD or 304: headers match the decoded GET, and the new Response has a clone for fail-open
+    if (!reader) {
+        return new Response(null, init)
+    }
     if (!head) {
         headers.delete('Content-Length')
         return new Response(null, init)
     }
 
-    let body = replay(head, reader)
-    const encoding = detectEncoding(headers.get('Content-Encoding'), head)
-    if (encoding) {
-        body = body.pipeThrough(new DecompressionStream(encoding))
-        headers.delete('Content-Encoding')
-        headers.delete('Content-Length')
-    }
-    return new Response(body, init)
+    const body = replay(head, reader)
+    return new Response(encoding ? body.pipeThrough(new DecompressionStream(encoding)) : body, init)
 }
 
-function detectEncoding(contentEncoding: string | null, head: Uint8Array): Encoding | null {
+function detectEncoding(contentEncoding: string | null, head: Uint8Array | null): Encoding | null {
     const encoding = contentEncoding?.trim().toLowerCase()
-    if (encoding === 'gzip' || encoding === 'x-gzip' || (head[0] === 0x1f && head[1] === 0x8b)) {
+    if (encoding === 'gzip' || encoding === 'x-gzip' || (head?.[0] === 0x1f && head[1] === 0x8b)) {
         return 'gzip'
     }
     return encoding === 'deflate' ? 'deflate' : null

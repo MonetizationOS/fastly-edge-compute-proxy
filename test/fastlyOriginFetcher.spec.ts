@@ -97,6 +97,18 @@ describe('normalizeOriginResponse', () => {
         expect(normalized.headers.get('Content-Length')).toBeNull()
     })
 
+    it('drops the encoding headers of a bodyless gzip HTML response, as GET serves it decoded', async () => {
+        const origin = new Response(null, {
+            headers: { 'Content-Type': 'text/html', 'Content-Encoding': 'gzip', 'Content-Length': '123' },
+        })
+
+        const normalized = await normalizeOriginResponse(origin)
+
+        expect(normalized.body).toBeNull()
+        expect(normalized.headers.get('Content-Encoding')).toBeNull()
+        expect(normalized.headers.get('Content-Length')).toBeNull()
+    })
+
     it('cancels the origin when the normalized body is cancelled', async () => {
         const cancel = vi.fn()
         const origin = new ReadableStream<Uint8Array>({
