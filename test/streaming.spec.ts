@@ -50,7 +50,7 @@ describe('streamed HTML pipeline', () => {
         expect(text).toContain('<meta name="title" content="Hello">')
         expect(text).toContain('<i>BEFORE</i><h1>Late</h1>')
         expect(text).toContain('href="https://test.example/next"')
-        expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Could not clone response'), expect.anything())
+        expect(cloneFailures(warn)).toEqual([])
     })
 
     it('gives a bodyless HTML origin response a clone for fail-open', async () => {
