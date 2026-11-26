@@ -49,6 +49,20 @@ describe('normalizeOriginResponse', () => {
         expect(await normalized.text()).toBe(html)
     })
 
+    it('matches the HTML content type case-insensitively', async () => {
+        const html = '<html><body>mixed case</body></html>'
+
+        const normalized = await normalizeOriginResponse(
+            htmlResponse(new Response(gzipSync(html)).body!, {
+                'Content-Type': 'Text/HTML; charset=UTF-8',
+                'Content-Encoding': 'gzip',
+            }),
+        )
+
+        expect(normalized.headers.get('Content-Encoding')).toBeNull()
+        expect(await normalized.text()).toBe(html)
+    })
+
     it('sniffs gzip without Content-Encoding, even split after the first byte', async () => {
         const html = '<html><body>sniffed</body></html>'
         const gzipped = gzipSync(html)

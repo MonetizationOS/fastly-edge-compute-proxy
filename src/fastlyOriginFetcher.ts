@@ -46,7 +46,8 @@ type Encoding = 'gzip' | 'deflate'
  * Decodes gzip/deflate, sniffing gzip magic bytes for origins that compress without saying so.
  */
 export async function normalizeOriginResponse(response: Response): Promise<Response> {
-    const contentType = response.headers.get('Content-Type') ?? ''
+    // Lowercased like the core's isHtmlContentType, which decides what it treats as HTML
+    const contentType = response.headers.get('Content-Type')?.toLowerCase() ?? ''
     if (!response.body || !contentType.startsWith('text/html')) {
         return response
     }
