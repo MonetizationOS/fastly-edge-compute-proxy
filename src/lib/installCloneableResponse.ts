@@ -136,6 +136,7 @@ const teeableBodies = new WeakMap<ReadableStream, TeeableBody>()
 function createTeeableBody(initial: ReadableStream<Uint8Array>): TeeableBody {
     let source = initial
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
+    let cancelled = false
     const stream = new ReadableStream<Uint8Array>(
         {
             async pull(controller) {
@@ -148,6 +149,7 @@ function createTeeableBody(initial: ReadableStream<Uint8Array>): TeeableBody {
                 }
             },
             cancel(reason) {
+                cancelled = true
                 return reader ? reader.cancel(reason) : source.cancel(reason)
             },
         },
@@ -157,7 +159,7 @@ function createTeeableBody(initial: ReadableStream<Uint8Array>): TeeableBody {
     const teeable: TeeableBody = {
         stream,
         branch() {
-            if (reader || stream.locked) {
+            if (reader || cancelled || stream.locked) {
                 throw new TypeError('Response.clone: body has already been used')
             }
             const [kept, cloned] = source.tee()

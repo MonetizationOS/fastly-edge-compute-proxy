@@ -122,6 +122,15 @@ describe('installCloneableResponse', () => {
         expect(() => response.clone()).toThrow(TypeError)
     })
 
+    it('throws from clone() once a stream body has been cancelled unread', async () => {
+        installCloneableResponse()
+
+        const response = new Response(chunks('a', 'b'))
+        await response.body!.cancel()
+
+        expect(() => response.clone()).toThrow(TypeError)
+    })
+
     it('cancels the source only once the body and every clone are cancelled', async () => {
         installCloneableResponse()
 
