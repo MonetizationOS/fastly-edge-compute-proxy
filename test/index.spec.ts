@@ -54,6 +54,23 @@ describe('MonetizationOS Proxy', () => {
         expect((json as { success: boolean }).success).toBe(true)
     })
 
+    it('sends the viewer host and protocol to the origin backend', async () => {
+        const fetchMock = mockFetch()
+
+        const req = new Request('https://test.example/index.html', { headers: { Forwarded: 'host=spoofed.example' } })
+        await handleRequest({ request: req } as FetchEvent)
+
+        const call = fetchMock.mock.calls.find(([urlOrReq]) => {
+            const url = urlOrReq instanceof Request ? urlOrReq.url : String(urlOrReq)
+            return url.startsWith('https://origin.example')
+        })
+        expect(call![1]).toEqual({ backend: 'origin' })
+        const headers = (call![0] as Request).headers
+        expect(headers.get('X-Forwarded-Host')).toBe('test.example')
+        expect(headers.get('X-Forwarded-Proto')).toBe('https')
+        expect(headers.get('Forwarded')).toBeNull()
+    })
+
     it('proxies mos API requests', async () => {
         mockFetch()
 
@@ -64,6 +81,26 @@ describe('MonetizationOS Proxy', () => {
         const res = await handleRequest({ request: req } as FetchEvent)
         expect(res.status).toBe(200)
         expect(await res.text()).toBe('response')
+    })
+
+    it('sends the public key and Fastly client metadata to custom endpoints', async () => {
+        const fetchMock = mockFetch()
+
+        const req = new Request('https://test.example/mos-endpoints/custom-endpoint', {
+            headers: { Cookie: `${testEnv.ANONYMOUS_SESSION_COOKIE_NAME}=the-session` },
+        })
+        await handleRequest({ request: req, client: { address: '203.0.113.10' } } as unknown as FetchEvent)
+
+        const call = fetchMock.mock.calls.find(([urlOrReq]) => {
+            const url = urlOrReq instanceof Request ? urlOrReq.url : String(urlOrReq)
+            return url.includes('/endpoints/custom-endpoint')
+        })
+        const headers = (call![0] as Request).headers
+        expect(headers.get('x-mos-key')).toBe(`PublicBearer ${testEnv.MONETIZATION_OS_SECRET_KEY}`)
+        expect(JSON.parse(headers.get('x-mos-endpoint-request-context')!)).toMatchObject({
+            identity: { anonymousIdentifier: 'the-session' },
+            clientMetadata: { fastly: { client: { address: '203.0.113.10' } } },
+        })
     })
 
     it('forwards POST /mos-api/offer-redemptions to the MonetizationOS API', async () => {
@@ -100,7 +137,7 @@ describe('MonetizationOS Proxy', () => {
             },
         })
         expect(body.fastly).toBeDefined()
-        expect((request as Request).headers.get('Authorization')).toBe(`Bearer ${testEnv.MONETIZATION_OS_SECRET_KEY}`)
+        expect((request as Request).headers.get('Authorization')).toBe(`PublicBearer ${testEnv.MONETIZATION_OS_SECRET_KEY}`)
 
         const originCalled = fetchMock.mock.calls.some(([urlOrReq]) => {
             const url = urlOrReq instanceof Request ? urlOrReq.url : String(urlOrReq)
@@ -135,6 +172,50 @@ describe('MonetizationOS Proxy', () => {
             expect.stringContaining('config store unavailable'),
         )
         consoleError.mockRestore()
+    })
+
+    it('asks the MonetizationOS API for gzip and has Fastly decode it', async () => {
+        const fetchMock = mockFetch()
+
+        await handleRequest({ request: new Request('https://test.example/index.html') } as FetchEvent)
+        await handleRequest({
+            request: new Request('https://test.example/mos-api/offer-redemptions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept-Encoding': 'br' },
+                body: JSON.stringify({ offerToken: 'offer.abc' }),
+            }),
+        } as FetchEvent)
+        await handleRequest({ request: new Request('https://test.example/mos-endpoints/custom-endpoint') } as FetchEvent)
+
+        const apiCalls = fetchMock.mock.calls.filter(([request]) => (request as Request).url.startsWith(testEnv.MONETIZATION_OS_HOST))
+        expect(apiCalls.map(([request]) => new URL((request as Request).url).pathname)).toEqual([
+            '/api/v1/surface-decisions',
+            '/api/v1/offer-redemptions',
+            '/api/v1/envs/test_123/endpoints/custom-endpoint',
+        ])
+        for (const [request, options] of apiCalls) {
+            expect((request as Request).headers.get('Accept-Encoding')).toBe('gzip')
+            expect(options).toEqual({ backend: 'monetization_api', fastly: { decompressGzip: true } })
+        }
+    })
+
+    it('relays API responses with the compress hint, whatever the viewer accepts', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response('{"ok":true}', { headers: { 'Content-Type': 'application/json' } }),
+        )
+        vi.stubGlobal('fetch', fetchMock)
+
+        const res = await handleRequest({
+            request: new Request('https://test.example/mos-endpoints/custom-endpoint', {
+                headers: { 'Accept-Encoding': 'gzip, br' },
+            }),
+        } as FetchEvent)
+
+        const [request, options] = fetchMock.mock.calls[0]!
+        expect((request as Request).headers.get('Accept-Encoding')).toBe('gzip')
+        expect(options).toEqual({ backend: 'monetization_api', fastly: { decompressGzip: true } })
+        expect(res.headers.get('x-compress-hint')).toBe('on')
+        expect(await res.json()).toEqual({ ok: true })
     })
 
     it('fetch surface decisions for HTML responses', async () => {
@@ -180,6 +261,7 @@ describe('MonetizationOS Proxy', () => {
         expect(body.http).toEqual({
             url: 'https://test.example/index.html?test=123&test1=456',
             userAgent: 'FastlyUnit/1.0',
+            clientIP: '203.0.113.10',
             proxyOrigin: { status: 200 },
         })
         expect(body.fastly).toMatchObject({
@@ -208,6 +290,34 @@ describe('MonetizationOS Proxy', () => {
                 decisionMs: 3,
             },
         })
+    })
+
+    it('omits http.clientIP when Fastly reports no client address', async () => {
+        const fetchMock = mockFetch()
+
+        const req = new Request('https://test.example/index.html')
+        await handleRequest({ request: req } as FetchEvent)
+
+        const body = await parseSurfaceDecisionsBody(findSurfaceDecisionsCall(fetchMock)!)
+        expect(body.http).not.toHaveProperty('clientIP')
+    })
+
+    it('sends the Fastly client address as http.clientIP to authenticated mos-api routes', async () => {
+        const fetchMock = mockFetch()
+
+        const req = new Request('https://test.example/mos-api/offer-redemptions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ offerToken: 'offer.abc' }),
+        })
+        await handleRequest({ request: req, client: { address: '203.0.113.10' } } as unknown as FetchEvent)
+
+        const call = fetchMock.mock.calls.find(([urlOrReq]) => {
+            const url = urlOrReq instanceof Request ? urlOrReq.url : String(urlOrReq)
+            return url.includes('/api/v1/offer-redemptions')
+        })
+        const body = (await (call![0] as Request).clone().json()) as { http: Record<string, unknown> }
+        expect(body.http.clientIP).toBe('203.0.113.10')
     })
 
     it('sends raw URL in http.url in surface decisions payload', async () => {

@@ -1,5 +1,5 @@
 import type { SurfaceDecisionResponse } from '@monetizationos/proxy'
-import { vi } from 'vitest'
+import { afterAll, beforeAll, vi } from 'vitest'
 
 export const testEnv = {
     ORIGIN_URL: 'https://origin.example',
@@ -91,4 +91,15 @@ export function mockFetch({
 
     vi.stubGlobal('fetch', fetchMock)
     return fetchMock
+}
+
+/** Hides Node's Response.prototype.clone for the current suite, as Fastly Compute has none. */
+export function withoutNativeResponseClone() {
+    const descriptor = Object.getOwnPropertyDescriptor(Response.prototype, 'clone')!
+    beforeAll(() => {
+        Object.defineProperty(Response.prototype, 'clone', { ...descriptor, value: undefined })
+    })
+    afterAll(() => {
+        Object.defineProperty(Response.prototype, 'clone', descriptor)
+    })
 }

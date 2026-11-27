@@ -30,6 +30,12 @@ These values are stored in Fastly Config Store (`config`) and Secret Store (`sec
 | `MONETIZATION_OS_HOST` | MonetizationOS API host. Defaults to `https://api.monetizationos.com`. |
 | `MONETIZATION_OS_ENDPOINTS_PREFIX` | Path prefix for proxied custom endpoints. Defaults to `/mos-endpoints/`. |
 
+Origin requests carry the viewer's host and protocol as `X-Forwarded-Host` and `X-Forwarded-Proto`, so the origin can build URLs on the public domain.
+
+MonetizationOS API requests ask for gzip, which Fastly decodes before the proxy reads or relays the response. Relayed API responses (`/mos-api` routes and custom endpoints) carry `x-compress-hint: on`, so Fastly compresses them for the viewer as its `Accept-Encoding` allows.
+
+Origin requests ask for gzip when the viewer accepts it, and identity otherwise. HTML is decoded for the proxy to read and carries `x-compress-hint: on`, so Fastly compresses the rewritten page for the viewer; other responses reach the viewer as the origin sent them.
+
 To base64-encode your secret key:
 
 ```bash

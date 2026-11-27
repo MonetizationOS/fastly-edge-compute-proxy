@@ -74,5 +74,10 @@ function adaptElement(element: FastlyElement): RewriterElement {
             element.replaceWith(content, toFastlyOptions(options))
         },
         remove: () => element.replaceWith(''),
+        // Fastly's Element can't drop its tags and keep its children. The core doesn't call this on a
+        // rewriter without onEndTag, so throw rather than lose the content.
+        removeAndKeepContent: () => {
+            throw new Error('removeAndKeepContent is not supported by fastly:html-rewriter')
+        },
     }
 }

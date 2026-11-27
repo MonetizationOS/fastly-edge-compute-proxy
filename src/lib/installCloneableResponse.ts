@@ -14,10 +14,10 @@ type ResponseConstructor = {
 }
 
 /**
- * On Fastly Compute, constructed Response objects may lack a working clone().
+ * On Fastly Compute, Response has no clone().
  * mos-proxy uses response.clone() for fail-open snapshots during the HTML pipeline.
- * This wraps Response so snapshotable bodies get an own-property clone() that
- * rebuilds from a buffered copy.
+ * This wraps Response so every body gets an own-property clone(): buffered bodies
+ * rebuild from a copy, stream bodies tee like the WHATWG clone().
  */
 export function installCloneableResponse(): void {
     const OriginalResponse = globalThis.Response as ResponseConstructor & {
@@ -29,22 +29,18 @@ export function installCloneableResponse(): void {
     }
 
     function createCloneableResponse(body?: BodyInit | null, init?: ResponseInit): Response {
+        if (body instanceof ReadableStream) {
+            const teeable = teeableBodies.get(body) ?? createTeeableBody(body)
+            const response = new OriginalResponse(teeable.stream, init)
+            defineClone(response, (cloneInit) => createCloneableResponse(teeable.branch(), cloneInit))
+            return response
+        }
+
         const response = new OriginalResponse(body, init)
         const snapshot = trySnapshotBody(body ?? null)
 
         if (snapshot !== UNSNAPSHOTABLE) {
-            Object.defineProperty(response, 'clone', {
-                configurable: true,
-                writable: true,
-                enumerable: false,
-                value: function clone(this: Response): Response {
-                    return createCloneableResponse(copySnapshot(snapshot), {
-                        status: this.status,
-                        statusText: this.statusText,
-                        headers: new Headers(this.headers),
-                    })
-                },
-            })
+            defineClone(response, (cloneInit) => createCloneableResponse(copySnapshot(snapshot), cloneInit))
         }
 
         return response
@@ -105,4 +101,72 @@ function copySnapshot(snapshot: SnapshotBody): SnapshotBody {
         return snapshot.slice()
     }
     return snapshot
+}
+
+function defineClone(response: Response, cloneWith: (init: ResponseInit) => Response): void {
+    Object.defineProperty(response, 'clone', {
+        configurable: true,
+        writable: true,
+        enumerable: false,
+        value: function clone(this: Response): Response {
+            return cloneWith({
+                status: this.status,
+                statusText: this.statusText,
+                headers: new Headers(this.headers),
+            })
+        },
+    })
+}
+
+type TeeableBody = {
+    /** The body every Response built on it exposes. */
+    stream: ReadableStream<Uint8Array>
+    /** Tees the unread source: `stream` keeps one branch, the clone gets the other. */
+    branch(): ReadableStream<Uint8Array>
+}
+
+/** Keyed by `TeeableBody.stream`, so `new Response(response.body)` keeps `response.body` (mos-proxy compares them). */
+const teeableBodies = new WeakMap<ReadableStream, TeeableBody>()
+
+/**
+ * Wraps a stream body so it can be teed after the Response is built. The source is only read on the first
+ * pull, so a clone taken before then gets every byte. As with the WHATWG clone, an unread branch buffers what
+ * its sibling reads until it is cancelled, and the source is cancelled once both branches are.
+ */
+function createTeeableBody(initial: ReadableStream<Uint8Array>): TeeableBody {
+    let source = initial
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
+    let cancelled = false
+    const stream = new ReadableStream<Uint8Array>(
+        {
+            async pull(controller) {
+                reader ??= source.getReader()
+                const { done, value } = await reader.read()
+                if (done) {
+                    controller.close()
+                } else {
+                    controller.enqueue(value)
+                }
+            },
+            cancel(reason) {
+                cancelled = true
+                return reader ? reader.cancel(reason) : source.cancel(reason)
+            },
+        },
+        // Pull only on read, so building a Response doesn't start the source
+        { highWaterMark: 0 },
+    )
+    const teeable: TeeableBody = {
+        stream,
+        branch() {
+            if (reader || cancelled || stream.locked) {
+                throw new TypeError('Response.clone: body has already been used')
+            }
+            const [kept, cloned] = source.tee()
+            source = kept
+            return cloned
+        },
+    }
+    teeableBodies.set(stream, teeable)
+    return teeable
 }

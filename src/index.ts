@@ -1,7 +1,8 @@
 /// <reference types="@fastly/js-compute" />
 import { MOSProxyBuilder } from '@monetizationos/proxy'
 import { loadEnv } from './env'
-import { buildFastlyClientMetadata } from './fastlyClientMetadata'
+import { apiFetcher } from './fastlyApiFetcher'
+import { buildFastlyClientMetadata, getFastlyClientIP } from './fastlyClientMetadata'
 import { fastlyHtmlRewriter } from './fastlyHtmlRewriter'
 import { originFetcher } from './fastlyOriginFetcher'
 import { installCloneableResponse } from './lib/installCloneableResponse'
@@ -36,7 +37,7 @@ export async function handleRequest(event: FetchEvent): Promise<Response> {
             surfaceDecisionsCookies: env.SURFACE_DECISIONS_COOKIES,
         })
         .withOriginFetcher(originFetcher)
-        .withApiFetcher((request) => fetch(request, { backend: 'monetization_api' }))
+        .withApiFetcher(apiFetcher)
         .withHtmlRewriter(fastlyHtmlRewriter)
         .withClientMetadata({
             build(request) {
@@ -45,6 +46,7 @@ export async function handleRequest(event: FetchEvent): Promise<Response> {
                 }
             },
         })
+        .withClientIP(() => getFastlyClientIP(event))
         .build()
 
     return proxy.handle(event.request)

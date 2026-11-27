@@ -2,7 +2,6 @@ import { TransformStream } from 'node:stream/web'
 import { HTMLRewriter } from 'html-rewriter-wasm'
 
 const encoder = new TextEncoder()
-const decoder = new TextDecoder()
 
 type ElementHandler = (element: FastlyElement) => void
 
@@ -55,43 +54,49 @@ function wrapElement(handler: ElementHandler) {
 
 /**
  * Test double for Fastly's HTMLRewritingStream. Extends TransformStream so
- * production code can use response.body.pipeThrough(stream).
+ * production code can use response.body.pipeThrough(stream). Rewrites each
+ * chunk as it arrives, like the real stream.
  */
 export class HTMLRewritingStream extends TransformStream<Uint8Array, Uint8Array> {
     readonly #handlers: { selector: string; handler: ElementHandler }[]
 
     constructor() {
         const handlers: { selector: string; handler: ElementHandler }[] = []
-        const inputChunks: Uint8Array[] = []
+        let output: Uint8Array[] = []
+        let rewriter: HTMLRewriter | null = null
+
+        const start = () => {
+            const created = new HTMLRewriter((chunk: Uint8Array) => {
+                output.push(chunk.slice())
+            })
+            for (const { selector, handler } of handlers) {
+                try {
+                    created.on(selector, { element: wrapElement(handler) as never })
+                } catch {
+                    // Skip selectors that are invalid at processing time.
+                }
+            }
+            return created
+        }
+        const drain = (controller: TransformStreamDefaultController<Uint8Array>) => {
+            for (const chunk of output) controller.enqueue(chunk)
+            output = []
+        }
 
         super({
-            transform(chunk) {
-                inputChunks.push(chunk instanceof Uint8Array ? chunk : encoder.encode(String(chunk)))
+            async transform(chunk, controller) {
+                rewriter ??= start()
+                await rewriter.write(chunk instanceof Uint8Array ? chunk : encoder.encode(String(chunk)))
+                drain(controller)
             },
-            flush(controller) {
-                let output = ''
-                const rewriter = new HTMLRewriter((chunk: BufferSource) => {
-                    output += decoder.decode(chunk)
-                })
-
-                for (const { selector, handler } of handlers) {
-                    try {
-                        rewriter.on(selector, { element: wrapElement(handler) as never })
-                    } catch {
-                        // Skip selectors that are invalid at processing time.
-                    }
-                }
-
+            async flush(controller) {
+                rewriter ??= start()
                 try {
-                    for (const chunk of inputChunks) {
-                        rewriter.write(chunk)
-                    }
-                    rewriter.end()
+                    await rewriter.end()
                 } finally {
                     rewriter.free()
                 }
-
-                controller.enqueue(encoder.encode(output))
+                drain(controller)
             },
         })
 
