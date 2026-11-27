@@ -70,11 +70,10 @@ function buildFastlyGeoMetadata(geo: Geolocation | null): Record<string, unknown
 }
 
 /**
- * Reads a Fastly Compute host API value safely.
+ * Reads a Fastly Compute host API value, mapping a throw to null.
  *
- * Property getters on `ClientInfo`, `Geolocation`, etc. throw when the value is
- * unavailable for this request — they are not optional JS fields, so optional
- * chaining (e.g. `geo?.as_name`) does not help; the getter itself can throw.
+ * Since js-compute 4, `ClientInfo` getters return null rather than throw when a
+ * value is unavailable. The guard stays for host APIs that still throw.
  */
 function readFastlyValue<T>(read: () => T): T | null {
     try {

@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { handleRequest } from '../src/index'
+import { handleFetch, handleRequest } from '../src/index'
 import { loadEnv } from '../src/env'
 import { mockFetch, surfaceDecisionsResponse, testEnv } from './helpers'
 import { findSurfaceDecisionsCall, parseSurfaceDecisionsBody } from './surfaceDecisionsBody'
@@ -120,6 +120,21 @@ describe('MonetizationOS Proxy', () => {
         const res = await handleRequest({ request: req } as FetchEvent)
         expect(res.status).toBe(200)
         expect(await res.json()).toEqual({ denied: true })
+    })
+
+    it('logs an uncaught error before rethrowing it', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+        vi.mocked(loadEnv).mockRejectedValueOnce(new Error('config store unavailable'))
+
+        await expect(handleFetch({ request: new Request('https://test.example/') } as FetchEvent)).rejects.toThrow(
+            'config store unavailable',
+        )
+
+        expect(consoleError).toHaveBeenCalledWith(
+            'Unhandled error in request handler:',
+            expect.stringContaining('config store unavailable'),
+        )
+        consoleError.mockRestore()
     })
 
     it('fetch surface decisions for HTML responses', async () => {
