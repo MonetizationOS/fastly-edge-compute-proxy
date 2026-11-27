@@ -63,6 +63,16 @@ describe('normalizeOriginResponse', () => {
         expect(await normalized.text()).toBe(html)
     })
 
+    it('asks Fastly to compress decoded HTML but not HTML it left encoded', async () => {
+        const decoded = await normalizeOriginResponse(
+            htmlResponse(new Response(gzipSync('<p>a</p>')).body!, { 'Content-Encoding': 'gzip' }),
+        )
+        const encoded = await normalizeOriginResponse(htmlResponse(new Response('x').body!, { 'Content-Encoding': 'br' }))
+
+        expect(decoded.headers.get('x-compress-hint')).toBe('on')
+        expect(encoded.headers.get('x-compress-hint')).toBeNull()
+    })
+
     it('sniffs gzip without Content-Encoding, even split after the first byte', async () => {
         const html = '<html><body>sniffed</body></html>'
         const gzipped = gzipSync(html)

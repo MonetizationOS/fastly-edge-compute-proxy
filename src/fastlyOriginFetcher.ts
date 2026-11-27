@@ -40,7 +40,8 @@ export function acceptsGzip(acceptEncoding: string | null): boolean {
 type Encoding = 'gzip' | 'deflate'
 
 /**
- * Streams HTML to mos-proxy decoded, so it can decide on the head while the origin is still sending.
+ * Streams HTML to mos-proxy decoded, so it can decide on the head while the origin is still sending, and
+ * marks it with `x-compress-hint: on` so Fastly compresses the rewritten page for the viewer.
  * Other responses pass through untouched.
  *
  * Decodes gzip/deflate, sniffing gzip magic bytes for origins that compress without saying so.
@@ -60,6 +61,9 @@ export async function normalizeOriginResponse(response: Response): Promise<Respo
     if (encoding) {
         headers.delete('Content-Encoding')
         headers.delete('Content-Length')
+    }
+    if (!headers.has('Content-Encoding')) {
+        headers.set('x-compress-hint', 'on')
     }
     // HEAD or 304: headers match the decoded GET, and the new Response has a clone for fail-open
     if (!reader) {

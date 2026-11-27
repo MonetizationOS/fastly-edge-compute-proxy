@@ -50,6 +50,7 @@ describe('streamed HTML pipeline', () => {
         expect(text).toContain('<meta name="title" content="Hello">')
         expect(text).toContain('<i>BEFORE</i><h1>Late</h1>')
         expect(text).toContain('href="https://test.example/next"')
+        expect(res.headers.get('x-compress-hint')).toBe('on')
         expect(cloneFailures(warn)).toEqual([])
     })
 

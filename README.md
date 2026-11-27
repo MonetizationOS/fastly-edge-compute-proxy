@@ -34,7 +34,7 @@ Origin requests carry the viewer's host and protocol as `X-Forwarded-Host` and `
 
 MonetizationOS API requests ask for gzip, which Fastly decodes before the proxy reads or relays the response. Relayed API responses (`/mos-api` routes and custom endpoints) carry `x-compress-hint: on`, so Fastly compresses them for the viewer as its `Accept-Encoding` allows.
 
-Origin requests ask for gzip when the viewer accepts it, and identity otherwise. HTML is decoded for the proxy to read; other responses reach the viewer as the origin sent them.
+Origin requests ask for gzip when the viewer accepts it, and identity otherwise. HTML is decoded for the proxy to read and carries `x-compress-hint: on`, so Fastly compresses the rewritten page for the viewer; other responses reach the viewer as the origin sent them.
 
 To base64-encode your secret key:
 
